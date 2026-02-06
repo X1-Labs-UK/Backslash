@@ -410,6 +410,78 @@ The database schema is automatically applied when deploying with Docker Compose.
 
 ---
 
+## � Acknowledgments
+
+Backslash is built on the shoulders of incredible open-source projects. We're grateful to every maintainer and contributor behind them.
+
+### Core Framework
+
+| Project | Description | License |
+|---|---|---|
+| [Next.js](https://nextjs.org/) | React framework for production — App Router, API routes, SSR | MIT |
+| [React](https://react.dev/) | UI library | MIT |
+| [TypeScript](https://www.typescriptlang.org/) | Typed JavaScript | Apache-2.0 |
+| [Tailwind CSS](https://tailwindcss.com/) | Utility-first CSS framework | MIT |
+| [Node.js](https://nodejs.org/) | JavaScript runtime | MIT |
+
+### Editor & UI
+
+| Project | Description | License |
+|---|---|---|
+| [CodeMirror 6](https://codemirror.net/) | Extensible code editor component (syntax highlighting, autocomplete, search) | MIT |
+| [Radix UI](https://www.radix-ui.com/) | Unstyled, accessible UI primitives (dialog, dropdown, tooltip, tabs, etc.) | MIT |
+| [Lucide](https://lucide.dev/) | Beautiful open-source icon set | ISC |
+| [react-pdf](https://github.com/wojtekmaj/react-pdf) | PDF viewer for React (powered by PDF.js) | MIT |
+| [react-resizable-panels](https://github.com/bvaughn/react-resizable-panels) | Draggable resizable panel layouts | MIT |
+| [Zustand](https://github.com/pmndrs/zustand) | Lightweight state management | MIT |
+| [class-variance-authority](https://cva.style/) | Component variant utility | Apache-2.0 |
+| [clsx](https://github.com/lukeed/clsx) / [tailwind-merge](https://github.com/dcastil/tailwind-merge) | Class name utilities | MIT |
+
+### Backend & Database
+
+| Project | Description | License |
+|---|---|---|
+| [PostgreSQL](https://www.postgresql.org/) | Relational database | PostgreSQL License |
+| [Drizzle ORM](https://orm.drizzle.team/) | TypeScript ORM with zero overhead | Apache-2.0 |
+| [postgres.js](https://github.com/porsager/postgres) | Fastest PostgreSQL client for Node.js | Unlicense |
+| [Redis](https://redis.io/) | In-memory data store for caching and queuing | BSD-3-Clause |
+| [BullMQ](https://docs.bullmq.io/) | Job queue for Node.js built on Redis | MIT |
+| [ioredis](https://github.com/redis/ioredis) | Redis client for Node.js | MIT |
+| [Socket.IO](https://socket.io/) | Real-time bidirectional WebSocket communication | MIT |
+
+### Compilation & Containers
+
+| Project | Description | License |
+|---|---|---|
+| [TeX Live](https://tug.org/texlive/) | Comprehensive TeX distribution | [Free Software](https://tug.org/texlive/copying.html) |
+| [latexmk](https://personal.psu.edu/~jcc8/software/latexmk/) | Automated LaTeX document generation | GPL-2.0 |
+| [Docker](https://www.docker.com/) | Container platform for sandboxed builds | Apache-2.0 |
+| [dockerode](https://github.com/apocas/dockerode) | Docker Remote API client for Node.js | Apache-2.0 |
+
+### Auth & Security
+
+| Project | Description | License |
+|---|---|---|
+| [bcrypt.js](https://github.com/dcodeIO/bcrypt.js) | Password hashing | MIT |
+| [jose](https://github.com/panva/jose) | JWT / JWS / JWE implementation | MIT |
+| [Zod](https://zod.dev/) | TypeScript-first schema validation | MIT |
+
+### Tooling
+
+| Project | Description | License |
+|---|---|---|
+| [pnpm](https://pnpm.io/) | Fast, disk-efficient package manager | MIT |
+| [PostCSS](https://postcss.org/) | CSS transformations | MIT |
+| [Drizzle Kit](https://orm.drizzle.team/kit-docs/overview) | Database migration toolkit | Apache-2.0 |
+| [Archiver](https://github.com/archiverjs/node-archiver) | Streaming archive generation | MIT |
+| [uuid](https://github.com/uuidjs/uuid) | RFC-compliant UUID generation | MIT |
+
+---
+
+Special thanks to the entire open-source community. If we've used your project and missed listing it here, please open an issue — we'd love to add it.
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
@@ -417,5 +489,5 @@ This project is licensed under the [MIT License](LICENSE).
 ---
 
 <p align="center">
-  Built with ❤️ using Next.js, Docker, and TeX Live.
+  Built with ❤️ and open-source software.
 </p>
