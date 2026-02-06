@@ -2,7 +2,7 @@
  * Standalone compilation worker entry point.
  * This can be run separately from the web app for horizontal scaling.
  *
- * Usage: npm start
+ * Usage: pnpm start
  *
  * Required environment variables:
  * - DATABASE_URL: PostgreSQL connection string

@@ -3,11 +3,14 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Install dependencies
-COPY package.json package-lock.json* ./
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
-RUN cd apps/web && npm install
+RUN cd apps/web && pnpm install --frozen-lockfile || pnpm install
 
 # Copy source
 COPY packages/shared/ packages/shared/
@@ -16,7 +19,7 @@ COPY templates/ templates/
 
 # Build
 WORKDIR /app/apps/web
-RUN npm run build
+RUN pnpm run build
 
 # ── Production Stage ─────────────────────────────────
 FROM node:22-alpine AS runner

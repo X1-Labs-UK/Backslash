@@ -10,14 +10,33 @@ services:
     entrypoint: ["true"]
     restart: "no"
 
+  # ── PostgreSQL Database ────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-leafedit}
+      POSTGRES_USER: ${POSTGRES_USER:-leafedit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leafedit}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leafedit}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   # ── Web Application ────────────────────────────────
   app:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
+    ports:
+      - "${PORT:-3000}:3000"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-leafedit}:${POSTGRES_PASSWORD:-leafedit}@postgres:5432/${POSTGRES_DB:-leafedit}
       - REDIS_URL=redis://redis:6379
       - STORAGE_PATH=/data/leafedit
       - TEMPLATES_PATH=/app/templates
@@ -29,11 +48,13 @@ services:
       - SESSION_SECRET=${SESSION_SECRET:-change-me-to-a-random-64-char-string}
       - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
     volumes:
-      - /data/leafedit:/data/leafedit
+      - project-data:/data/leafedit
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       compiler-image:
         condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     restart: unless-stopped
@@ -52,5 +73,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  postgres-data:
+    driver: local
+  project-data:
+    driver: local
   redis-data:
     driver: local

@@ -7,6 +7,7 @@ import {
   User,
   LogOut,
   LayoutDashboard,
+  Key,
   Sun,
   Moon,
 } from "lucide-react";
@@ -147,6 +148,14 @@ export function AppHeader({ children, className }: AppHeaderProps) {
               >
                 <LayoutDashboard className="h-4 w-4" />
                 <span>Dashboard</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  window.location.href = "/dashboard/developers";
+                }}
+              >
+                <Key className="h-4 w-4" />
+                <span>API Keys</span>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout}>

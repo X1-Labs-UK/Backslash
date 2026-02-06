@@ -91,3 +91,47 @@ export interface ApiError {
 export interface SuccessResponse {
   success: true;
 }
+
+// ─── API Keys ───────────────────────────────────────
+
+export interface ApiKey {
+  id: string;
+  name: string;
+  keyPrefix: string;
+  lastUsedAt: string | null;
+  requestCount: number;
+  expiresAt: string | null;
+  createdAt: string;
+}
+
+export interface CreateApiKeyRequest {
+  name: string;
+  expiresInDays?: number;
+}
+
+export interface CreateApiKeyResponse {
+  apiKey: ApiKey;
+  /** The full key — only shown once at creation time */
+  key: string;
+}
+
+export interface ApiKeyListResponse {
+  apiKeys: ApiKey[];
+}
+
+// ─── Public API v1 ──────────────────────────────────
+
+export interface V1CompileRequest {
+  /** Raw LaTeX source code to compile */
+  source: string;
+  /** LaTeX engine to use (default: pdflatex) */
+  engine?: Engine;
+}
+
+export interface V1CompileResponse {
+  /** Base64-encoded PDF */
+  pdf: string;
+  logs: string;
+  errors: ParsedLogEntry[];
+  durationMs: number;
+}

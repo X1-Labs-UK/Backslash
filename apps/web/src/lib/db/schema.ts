@@ -5,6 +5,7 @@ import {
   text,
   timestamp,
   integer,
+  bigint,
   boolean,
   pgEnum,
   index,
@@ -134,12 +135,36 @@ export const builds = pgTable(
   ]
 );
 
+// ─── API Keys ───────────────────────────────────────
+
+export const apiKeys = pgTable(
+  "api_keys",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: varchar("name", { length: 255 }).notNull(),
+    keyHash: text("key_hash").notNull(),
+    keyPrefix: varchar("key_prefix", { length: 12 }).notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    requestCount: bigint("request_count", { mode: "number" }).default(0).notNull(),
+    expiresAt: timestamp("expires_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("api_keys_user_idx").on(table.userId),
+    uniqueIndex("api_keys_hash_idx").on(table.keyHash),
+  ]
+);
+
 // ─── Relations ──────────────────────────────────────
 
 export const usersRelations = relations(users, ({ many }) => ({
   projects: many(projects),
   sessions: many(sessions),
   builds: many(builds),
+  apiKeys: many(apiKeys),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -165,4 +190,8 @@ export const buildsRelations = relations(builds, ({ one }) => ({
     references: [projects.id],
   }),
   user: one(users, { fields: [builds.userId], references: [users.id] }),
+}));
+
+export const apiKeysRelations = relations(apiKeys, ({ one }) => ({
+  user: one(users, { fields: [apiKeys.userId], references: [users.id] }),
 }));
