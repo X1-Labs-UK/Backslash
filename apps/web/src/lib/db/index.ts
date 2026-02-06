@@ -4,7 +4,13 @@ import * as schema from "./schema";
 
 const connectionString =
   process.env.DATABASE_URL ||
-  "postgresql://backslash:devpassword@localhost:5432/backslash";
+  "postgresql://backslash:backslash@postgres:5432/backslash";
+
+if (!process.env.DATABASE_URL) {
+  console.warn(
+    "[DB] DATABASE_URL is not set — falling back to bundled postgres default"
+  );
+}
 
 const client = postgres(connectionString);
 
