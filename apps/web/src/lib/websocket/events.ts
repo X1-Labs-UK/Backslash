@@ -1,8 +1,8 @@
-import type { ParsedLogEntry, BuildStatus } from "@leafedit/shared";
+import type { ParsedLogEntry, BuildStatus } from "@backslash/shared";
 import type {
   ServerToClientEvents as SharedServerToClientEvents,
   ClientToServerEvents as SharedClientToServerEvents,
-} from "@leafedit/shared";
+} from "@backslash/shared";
 
 // ─── Re-export shared event maps ───────────────────
 

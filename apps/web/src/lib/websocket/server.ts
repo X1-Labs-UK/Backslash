@@ -12,11 +12,11 @@ import {
 import type {
   ServerToClientEvents,
   ClientToServerEvents,
-} from "@leafedit/shared";
+} from "@backslash/shared";
 
 // ─── Type Alias ────────────────────────────────────
 
-type LeafEditSocketServer = SocketIOServer<
+type BackslashSocketServer = SocketIOServer<
   ClientToServerEvents,
   ServerToClientEvents,
   InterServerEvents,
@@ -25,7 +25,7 @@ type LeafEditSocketServer = SocketIOServer<
 
 // ─── Singleton ─────────────────────────────────────
 
-let io: LeafEditSocketServer | null = null;
+let io: BackslashSocketServer | null = null;
 
 // ─── Server Setup ──────────────────────────────────
 
@@ -38,7 +38,7 @@ let io: LeafEditSocketServer | null = null;
  * - Automatic user-room joining on connect
  * - Project room joining on client request
  */
-export function initSocketServer(httpServer: HttpServer): LeafEditSocketServer {
+export function initSocketServer(httpServer: HttpServer): BackslashSocketServer {
   if (io) {
     return io;
   }
@@ -176,7 +176,7 @@ export function broadcastBuildUpdate(
 /**
  * Returns the Socket.IO server instance, or null if not yet initialized.
  */
-export function getSocketServer(): LeafEditSocketServer | null {
+export function getSocketServer(): BackslashSocketServer | null {
   return io;
 }
 

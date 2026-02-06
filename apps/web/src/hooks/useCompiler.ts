@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
-import type { BuildStatus, ParsedLogEntry } from "@leafedit/shared";
+import type { BuildStatus, ParsedLogEntry } from "@backslash/shared";
 
 interface CompileResult {
   status: BuildStatus;

@@ -8,7 +8,7 @@ import type {
   BuildStatus,
   Engine,
   ParsedLogEntry,
-} from "@leafedit/shared";
+} from "@backslash/shared";
 
 interface EditorState {
   // Project

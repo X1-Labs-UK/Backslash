@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import type { Project, ProjectFile, Build } from "@leafedit/shared";
+import type { Project, ProjectFile, Build } from "@backslash/shared";
 
 interface ProjectData {
   project: Project;

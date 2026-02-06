@@ -5,6 +5,6 @@ export default defineConfig({
   out: "./drizzle/migrations",
   dialect: "postgresql",
   dbCredentials: {
-    url: process.env.DATABASE_URL || "postgresql://leafedit:devpassword@localhost:5432/leafedit",
+    url: process.env.DATABASE_URL || "postgresql://backslash:devpassword@localhost:5432/backslash",
   },
 });

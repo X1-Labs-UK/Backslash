@@ -316,19 +316,19 @@ function getSections(origin: string): EndpointSection[] {
 }`,
         curl: `# Upload a .tex file → get raw PDF back
 curl -X POST ${BASE}/compile \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -F "file=@document.tex" \\
   -F "engine=pdflatex" \\
   --output output.pdf
 
 # Upload a .tex file → get base64 JSON response
 curl -X POST "${BASE}/compile?format=base64" \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -F "file=@document.tex"
 
 # JSON body (still supported)
 curl -X POST ${BASE}/compile \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"source": "\\\\documentclass{article}\\n\\\\begin{document}\\nHello!\\n\\\\end{document}"}' \\
   --output output.pdf`,
@@ -362,7 +362,7 @@ curl -X POST ${BASE}/compile \\
   ]
 }`,
         curl: `curl ${BASE}/projects \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
       {
         method: "POST",
@@ -397,7 +397,7 @@ curl -X POST ${BASE}/compile \\
   }
 }`,
         curl: `curl -X POST ${BASE}/projects \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"name": "My Paper", "template": "article"}'`,
       },
@@ -417,7 +417,7 @@ curl -X POST ${BASE}/compile \\
   }
 }`,
         curl: `curl ${BASE}/projects/PROJECT_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
       {
         method: "PUT",
@@ -443,7 +443,7 @@ curl -X POST ${BASE}/compile \\
           },
         },
         curl: `curl -X PUT ${BASE}/projects/PROJECT_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"name": "Renamed Paper", "engine": "xelatex"}'`,
       },
@@ -454,7 +454,7 @@ curl -X POST ${BASE}/compile \\
           "Delete a project and all its files permanently.",
         auth: true,
         curl: `curl -X DELETE ${BASE}/projects/PROJECT_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
     ],
   },
@@ -480,7 +480,7 @@ curl -X POST ${BASE}/compile \\
   ]
 }`,
         curl: `curl ${BASE}/projects/PROJECT_ID/files \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
       {
         method: "POST",
@@ -501,7 +501,7 @@ curl -X POST ${BASE}/compile \\
           },
         },
         curl: `curl -X POST ${BASE}/projects/PROJECT_ID/files \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"path": "chapters/intro.tex", "content": "\\\\chapter{Introduction}\\n"}'`,
       },
@@ -521,7 +521,7 @@ curl -X POST ${BASE}/compile \\
   "content": "\\\\documentclass{article}..."
 }`,
         curl: `curl ${BASE}/projects/PROJECT_ID/files/FILE_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
       {
         method: "PUT",
@@ -536,7 +536,7 @@ curl -X POST ${BASE}/compile \\
           },
         },
         curl: `curl -X PUT ${BASE}/projects/PROJECT_ID/files/FILE_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"content": "\\\\documentclass{article}\\n\\\\begin{document}\\nUpdated!\\n\\\\end{document}"}'`,
       },
@@ -546,7 +546,7 @@ curl -X POST ${BASE}/compile \\
         description: "Delete a file from the project.",
         auth: true,
         curl: `curl -X DELETE ${BASE}/projects/PROJECT_ID/files/FILE_ID \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
     ],
   },
@@ -569,7 +569,7 @@ curl -X POST ${BASE}/compile \\
   ]
 }`,
         curl: `curl -X POST ${BASE}/projects/PROJECT_ID/files/upload \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -F "files[]=@figure1.png" \\
   -F "paths[]=images/figure1.png" \\
   -F "files[]=@refs.bib" \\
@@ -607,7 +607,7 @@ curl -X POST ${BASE}/compile \\
   "message": "Compilation queued"
 }`,
         curl: `curl -X POST ${BASE}/projects/PROJECT_ID/compile \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{}'`,
       },
@@ -627,7 +627,7 @@ curl -X POST ${BASE}/compile \\
         notes:
           "Returns `application/pdf` content type. The project must have a successful build.",
         curl: `curl -o output.pdf ${BASE}/projects/PROJECT_ID/pdf \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
     ],
   },
@@ -661,7 +661,7 @@ curl -X POST ${BASE}/compile \\
   ]
 }`,
         curl: `curl ${BASE}/projects/PROJECT_ID/builds \\
-  -H "Authorization: Bearer le_YOUR_API_KEY"`,
+  -H "Authorization: Bearer bs_YOUR_API_KEY"`,
       },
     ],
   },
@@ -736,7 +736,7 @@ export default function ApiDocsPage() {
           API Documentation
         </h1>
         <p className="text-text-secondary mb-8">
-          The LeafEdit API lets you compile LaTeX documents, manage projects,
+          The Backslash API lets you compile LaTeX documents, manage projects,
           and upload files programmatically. All endpoints require API key
           authentication.
         </p>
@@ -766,8 +766,8 @@ export default function ApiDocsPage() {
             header using the Bearer scheme:
           </p>
           <div className="relative rounded-lg bg-bg-tertiary border border-border p-3 font-mono text-xs text-text-secondary mb-4">
-            <CopyButton text='Authorization: Bearer le_YOUR_API_KEY' />
-            <pre>Authorization: Bearer le_YOUR_API_KEY</pre>
+            <CopyButton text='Authorization: Bearer bs_YOUR_API_KEY' />
+            <pre>Authorization: Bearer bs_YOUR_API_KEY</pre>
           </div>
           <p className="text-sm text-text-secondary">
             API keys can be created and managed in your{" "}

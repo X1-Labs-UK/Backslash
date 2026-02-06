@@ -7,17 +7,17 @@
  * Required environment variables:
  * - DATABASE_URL: PostgreSQL connection string
  * - REDIS_URL: Redis connection string
- * - COMPILER_IMAGE: Docker image for ephemeral compile containers (default: leafedit-compiler)
+ * - COMPILER_IMAGE: Docker image for ephemeral compile containers (default: backslash-compiler)
  * - MAX_CONCURRENT_BUILDS: Max parallel compilations (default: 5)
  * - COMPILE_TIMEOUT: Timeout per build in seconds (default: 120)
  * - STORAGE_PATH: Path to project data (default: /data)
  */
 
-console.log("LeafEdit Compilation Worker");
-console.log("==========================");
+console.log("Backslash Compilation Worker");
+console.log("============================");
 console.log(`Redis: ${process.env.REDIS_URL || "redis://localhost:6379"}`);
 console.log(`Database: ${process.env.DATABASE_URL ? "[configured]" : "[default]"}`);
-console.log(`Compiler Image: ${process.env.COMPILER_IMAGE || "leafedit-compiler"}`);
+console.log(`Compiler Image: ${process.env.COMPILER_IMAGE || "backslash-compiler"}`);
 console.log(`Max Concurrent Builds: ${process.env.MAX_CONCURRENT_BUILDS || "5"}`);
 console.log(`Compile Timeout: ${process.env.COMPILE_TIMEOUT || "120"}s`);
 console.log("");

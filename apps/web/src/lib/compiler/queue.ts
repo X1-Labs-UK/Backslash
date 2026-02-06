@@ -1,6 +1,6 @@
 import { Queue, type JobsOptions } from "bullmq";
 import IORedis from "ioredis";
-import type { Engine } from "@leafedit/shared";
+import type { Engine } from "@backslash/shared";
 
 // ─── Redis Connection ──────────────────────────────
 

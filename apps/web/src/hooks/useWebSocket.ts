@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
-import type { BuildStatus, ParsedLogEntry } from "@leafedit/shared";
+import type { BuildStatus, ParsedLogEntry } from "@backslash/shared";
 
 interface BuildCompleteData {
   projectId: string;

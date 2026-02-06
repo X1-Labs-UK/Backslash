@@ -3,7 +3,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "LeafEdit",
+  title: "Backslash",
   description: "Open-source LaTeX editor with live PDF preview",
 };
 

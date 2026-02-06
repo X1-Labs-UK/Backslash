@@ -6,7 +6,7 @@ services:
     build:
       context: .
       dockerfile: docker/texlive/Dockerfile
-    image: leafedit-compiler
+    image: backslash-compiler
     entrypoint: ["true"]
     restart: "no"
 
@@ -19,19 +19,19 @@ services:
     profiles:
       - postgres
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-leafedit}
-      POSTGRES_USER: ${POSTGRES_USER:-leafedit}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-leafedit}
+      POSTGRES_DB: ${POSTGRES_DB:-backslash}
+      POSTGRES_USER: ${POSTGRES_USER:-backslash}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-backslash}
     volumes:
       - postgres-data:/var/lib/postgresql/data
       - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-leafedit}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-backslash}"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
-      - leafedit
+      - backslash
     restart: unless-stopped
 
   # ── Web Application ────────────────────────────────
@@ -43,18 +43,18 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=${DATABASE_URL}
       - REDIS_URL=redis://redis:6379
-      - STORAGE_PATH=/data/leafedit
+      - STORAGE_PATH=/data/backslash
       - TEMPLATES_PATH=/app/templates
-      - COMPILER_IMAGE=leafedit-compiler
+      - COMPILER_IMAGE=backslash-compiler
       - COMPILE_MEMORY=${COMPILE_MEMORY:-1g}
       - COMPILE_CPUS=${COMPILE_CPUS:-1.5}
       - MAX_CONCURRENT_BUILDS=${MAX_CONCURRENT_BUILDS:-5}
       - COMPILE_TIMEOUT=${COMPILE_TIMEOUT:-120}
       - SESSION_SECRET=${SESSION_SECRET:-change-me-to-a-random-64-char-string}
       - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
-      - PROJECTS_VOLUME=leafedit-project-data
+      - PROJECTS_VOLUME=backslash-project-data
     volumes:
-      - project-data:/data/leafedit
+      - project-data:/data/backslash
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       compiler-image:
@@ -62,7 +62,7 @@ services:
       redis:
         condition: service_healthy
     networks:
-      - leafedit
+      - backslash
     restart: unless-stopped
 
   # ── Redis ──────────────────────────────────────────
@@ -77,11 +77,11 @@ services:
       timeout: 5s
       retries: 5
     networks:
-      - leafedit
+      - backslash
     restart: unless-stopped
 
 networks:
-  leafedit:
+  backslash:
     driver: bridge
 
 volumes:
@@ -89,6 +89,6 @@ volumes:
     driver: local
   project-data:
     driver: local
-    name: leafedit-project-data
+    name: backslash-project-data
   redis-data:
     driver: local

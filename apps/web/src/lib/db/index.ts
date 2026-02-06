@@ -4,7 +4,7 @@ import * as schema from "./schema";
 
 const connectionString =
   process.env.DATABASE_URL ||
-  "postgresql://leafedit:devpassword@localhost:5432/leafedit";
+  "postgresql://backslash:devpassword@localhost:5432/backslash";
 
 const client = postgres(connectionString);
 

@@ -1,4 +1,4 @@
-import type { ParsedLogEntry } from "@leafedit/shared";
+import type { ParsedLogEntry } from "@backslash/shared";
 
 // ─── Patterns ──────────────────────────────────────
 

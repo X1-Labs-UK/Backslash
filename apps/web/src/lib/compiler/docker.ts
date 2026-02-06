@@ -2,8 +2,8 @@ import Docker from "dockerode";
 import { Readable } from "stream";
 import { readFile } from "fs/promises";
 import path from "path";
-import { ENGINE_FLAGS, LIMITS } from "@leafedit/shared";
-import type { Engine } from "@leafedit/shared";
+import { ENGINE_FLAGS, LIMITS } from "@backslash/shared";
+import type { Engine } from "@backslash/shared";
 
 // ─── Docker Client ─────────────────────────────────
 
@@ -20,7 +20,7 @@ export function getDockerClient(): Docker {
 
 // ─── Configuration ─────────────────────────────────
 
-const COMPILER_IMAGE = process.env.COMPILER_IMAGE || "leafedit-compiler";
+const COMPILER_IMAGE = process.env.COMPILER_IMAGE || "backslash-compiler";
 
 const COMPILE_TIMEOUT = parseInt(
   process.env.COMPILE_TIMEOUT ||
@@ -37,7 +37,7 @@ const COMPILE_CPUS = parseFloat(
 );
 
 const STORAGE_PATH = process.env.STORAGE_PATH || "/data";
-const PROJECTS_VOLUME = process.env.PROJECTS_VOLUME || "leafedit-project-data";
+const PROJECTS_VOLUME = process.env.PROJECTS_VOLUME || "backslash-project-data";
 
 // ─── Types ─────────────────────────────────────────
 

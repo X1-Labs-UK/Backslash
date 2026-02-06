@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 // ─── Key Generation ─────────────────────────────────
 
-const KEY_PREFIX = "le_";
+const KEY_PREFIX = "bs_";
 const KEY_BYTES = 32;
 
 /**

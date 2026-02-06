@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useTheme } from "@/components/ThemeProvider";
 import {
-  Leaf,
   User,
   LogOut,
   LayoutDashboard,
@@ -83,9 +82,8 @@ export function AppHeader({ children, className }: AppHeaderProps) {
             href="/dashboard"
             className="flex items-center gap-1.5 shrink-0 text-accent hover:text-accent-hover transition-colors"
           >
-            <Leaf className="h-5 w-5" />
-            <span className="text-sm font-bold hidden sm:inline">
-              LeafEdit
+            <span className="text-sm font-bold hidden sm:inline font-mono">
+              \Backslash
             </span>
           </a>
         </div>

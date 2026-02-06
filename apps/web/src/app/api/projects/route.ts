@@ -3,7 +3,7 @@ import { projects, projectFiles, builds } from "@/lib/db/schema";
 import { withAuth, AuthenticatedUser } from "@/lib/auth/middleware";
 import { createProjectSchema } from "@/lib/utils/validation";
 import * as storage from "@/lib/storage";
-import { MIME_TYPES } from "@leafedit/shared";
+import { MIME_TYPES } from "@backslash/shared";
 import { eq, and, desc } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import path from "path";

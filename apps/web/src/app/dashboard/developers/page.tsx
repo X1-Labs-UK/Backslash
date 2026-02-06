@@ -398,7 +398,7 @@ function ApiKeyRow({ apiKey, onDelete }: ApiKeyRowProps) {
               )}
             </button>
             <code className="font-mono">
-              {showPrefix ? `${apiKey.keyPrefix}...` : "le_••••••••"}
+              {showPrefix ? `${apiKey.keyPrefix}...` : "bs_••••••••"}
             </code>
           </span>
 
@@ -514,7 +514,7 @@ export default function DeveloperDashboardPage() {
             Developer Settings
           </h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Manage API keys and integrate with the LeafEdit API
+            Manage API keys and integrate with the Backslash API
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -548,7 +548,7 @@ export default function DeveloperDashboardPage() {
         <div className="rounded-lg bg-bg-secondary border border-border p-3 font-mono text-xs text-text-secondary overflow-x-auto">
           <pre className="whitespace-pre">
 {`curl -X POST ${typeof window !== "undefined" ? window.location.origin : "https://your-instance.com"}/api/v1/compile \\
-  -H "Authorization: Bearer le_YOUR_API_KEY" \\
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{"source": "\\\\documentclass{article}\\n\\\\begin{document}\\nHello!\\n\\\\end{document}"}'`}
           </pre>
@@ -591,7 +591,7 @@ export default function DeveloperDashboardPage() {
             No API keys
           </h3>
           <p className="mt-1 text-sm text-text-secondary text-center max-w-sm">
-            Create an API key to start using the LeafEdit API for programmatic
+            Create an API key to start using the Backslash API for programmatic
             LaTeX compilation and project management.
           </p>
           <button

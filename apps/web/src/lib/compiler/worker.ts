@@ -1,6 +1,6 @@
 import { Worker, type Job } from "bullmq";
 import { eq } from "drizzle-orm";
-import { LIMITS } from "@leafedit/shared";
+import { LIMITS } from "@backslash/shared";
 
 import { db } from "@/lib/db";
 import { builds } from "@/lib/db/schema";

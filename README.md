@@ -1,4 +1,4 @@
-<h1 align="center">🍃 LeafEdit</h1>
+<h1 align="center">\ Backslash</h1>
 <p align="center"><strong>Self-hostable, open-source LaTeX editor with live PDF preview and a full REST API.</strong></p>
 <p align="center">Write beautiful documents with a modern editing experience — on your own infrastructure.</p>
 
@@ -44,15 +44,15 @@
 If you already have a PostgreSQL database (e.g. Neon, Supabase, AWS RDS, or a remote server):
 
 ```bash
-git clone https://github.com/your-username/leafedit.git
-cd leafedit
+git clone https://github.com/your-username/backslash.git
+cd backslash
 cp .env.example .env
 ```
 
 Edit `.env` and set your `DATABASE_URL`:
 
 ```env
-DATABASE_URL=postgresql://user:password@your-host:5432/leafedit
+DATABASE_URL=postgresql://user:password@your-host:5432/backslash
 SESSION_SECRET=change-me-to-a-random-64-char-string
 ```
 
@@ -67,17 +67,17 @@ docker compose up -d
 If you want Docker Compose to manage PostgreSQL for you:
 
 ```bash
-git clone https://github.com/your-username/leafedit.git
-cd leafedit
+git clone https://github.com/your-username/backslash.git
+cd backslash
 cp .env.example .env
 ```
 
 Edit `.env` and set your postgres credentials (leave `DATABASE_URL` commented out):
 
 ```env
-POSTGRES_USER=leafedit
+POSTGRES_USER=backslash
 POSTGRES_PASSWORD=change-me-to-a-strong-password
-POSTGRES_DB=leafedit
+POSTGRES_DB=backslash
 SESSION_SECRET=change-me-to-a-random-64-char-string
 ```
 
@@ -108,11 +108,11 @@ SESSION_SECRET=change-me-to-a-random-64-char-string
 
 # Database — pick ONE of:
 # Option A: External database
-DATABASE_URL=postgresql://user:password@your-host:5432/leafedit
+DATABASE_URL=postgresql://user:password@your-host:5432/backslash
 # Option B: Built-in Docker PostgreSQL (use --profile postgres)
-POSTGRES_USER=leafedit
-POSTGRES_PASSWORD=leafedit
-POSTGRES_DB=leafedit
+POSTGRES_USER=backslash
+POSTGRES_PASSWORD=backslash
+POSTGRES_DB=backslash
 
 # Compilation (optional)
 COMPILE_MEMORY=1g
@@ -129,9 +129,9 @@ DISABLE_SIGNUP=false
 | `PORT` | `3000` | Port the web app listens on |
 | `SESSION_SECRET` | — | Secret key for signing session tokens (**required**) |
 | `DATABASE_URL` | — | Full PostgreSQL connection string (if using external DB) |
-| `POSTGRES_USER` | `leafedit` | PostgreSQL username (if using built-in DB) |
-| `POSTGRES_PASSWORD` | `leafedit` | PostgreSQL password (if using built-in DB) |
-| `POSTGRES_DB` | `leafedit` | PostgreSQL database name (if using built-in DB) |
+| `POSTGRES_USER` | `backslash` | PostgreSQL username (if using built-in DB) |
+| `POSTGRES_PASSWORD` | `backslash` | PostgreSQL password (if using built-in DB) |
+| `POSTGRES_DB` | `backslash` | PostgreSQL database name (if using built-in DB) |
 | `COMPILE_MEMORY` | `1g` | Memory limit per compile container |
 | `COMPILE_CPUS` | `1.5` | CPU limit per compile container |
 | `MAX_CONCURRENT_BUILDS` | `5` | Maximum simultaneous compilations |
@@ -142,25 +142,25 @@ DISABLE_SIGNUP=false
 
 ## 🔌 REST API
 
-LeafEdit includes a full REST API for programmatic access. Generate an API key from the **Developer Settings** page in the dashboard, then use it in the `Authorization` header.
+Backslash includes a full REST API for programmatic access. Generate an API key from the **Developer Settings** page in the dashboard, then use it in the `Authorization` header.
 
 ### Quick Start
 
 ```bash
 # Upload a .tex file and get a compiled PDF back
 curl -X POST https://your-instance.com/api/v1/compile \
-  -H "Authorization: Bearer le_YOUR_API_KEY" \
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \
   -F "file=@document.tex" \
   --output output.pdf
 
 # Or get the result as base64 JSON
 curl -X POST "https://your-instance.com/api/v1/compile?format=base64" \
-  -H "Authorization: Bearer le_YOUR_API_KEY" \
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \
   -F "file=@document.tex"
 
 # JSON body also works (source as a string)
 curl -X POST https://your-instance.com/api/v1/compile \
-  -H "Authorization: Bearer le_YOUR_API_KEY" \
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"source": "\\documentclass{article}\n\\begin{document}\nHello!\n\\end{document}"}' \
   --output output.pdf
@@ -201,7 +201,7 @@ Full interactive API documentation is available at `/dashboard/developers/docs` 
 ## 🏗️ Architecture
 
 ```
-leafedit/
+backslash/
 ├── apps/
 │   ├── web/              # Next.js 15 app (frontend + API + WebSocket server)
 │   └── worker/           # Background build worker (BullMQ)
@@ -231,14 +231,13 @@ leafedit/
 
 ## 🛠️ Development Setup
 
-If you want to contribute or run LeafEdit locally for development:
+If you want to contribute or run Backslash locally for development:
 
 **1. Clone and install:**
 
 ```bash
-git clone https://github.com/your-username/leafedit.git
-cd leafedit
-cd apps/web && pnpm install
+git clone https://github.com/your-username/backslash.git
+cd backslash
 ```
 
 **2. Start dev services (PostgreSQL + Redis):**
@@ -252,11 +251,11 @@ docker compose -f docker-compose.dev.yml up -d
 Create `apps/web/.env`:
 
 ```env
-DATABASE_URL=postgresql://leafedit:devpassword@localhost:5432/leafedit
+DATABASE_URL=postgresql://backslash:devpassword@localhost:5432/backslash
 REDIS_URL=redis://localhost:6379
 STORAGE_PATH=./data
 TEMPLATES_PATH=../../templates
-COMPILER_IMAGE=leafedit-compiler
+COMPILER_IMAGE=backslash-compiler
 SESSION_SECRET=dev-secret-change-in-production
 ```
 
@@ -286,7 +285,7 @@ cd apps/web && pnpm dev
 
 ### LaTeX Engines
 
-LeafEdit supports the following LaTeX engines and auto-detects the appropriate one based on your document's packages:
+Backslash supports the following LaTeX engines and auto-detects the appropriate one based on your document's packages:
 
 | Engine | Flag | Auto-detected when |
 |---|---|---|
@@ -389,7 +388,7 @@ apps/web/src/
   - Configurable memory and CPU limits
   - Automatic container removal after build completion
 - **Authentication** — bcrypt password hashing with JWT session tokens (7-day expiry)
-- **API key auth** — Keys are SHA-256 hashed before storage. Only the prefix (`le_...`) is stored in plaintext for identification.
+- **API key auth** — Keys are SHA-256 hashed before storage. Only the prefix (`bs_...`) is stored in plaintext for identification.
 - **Input validation** — Zod schemas for all API inputs
 - **Path traversal protection** — File paths are validated and sanitized
 - **Rate limiting** — Configurable build rate limits per user
@@ -398,7 +397,7 @@ apps/web/src/
 
 ## 🗄️ Database Schema
 
-LeafEdit uses PostgreSQL with Drizzle ORM. The schema includes:
+Backslash uses PostgreSQL with Drizzle ORM. The schema includes:
 
 - **users** — User accounts (email, name, password hash)
 - **sessions** — Auth sessions with JWT tokens

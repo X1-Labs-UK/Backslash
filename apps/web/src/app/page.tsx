@@ -36,7 +36,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
           <Link href="/" className="flex items-center gap-2">
             <span className="text-xl font-bold text-accent font-mono">
-              LeafEdit
+              \Backslash
             </span>
           </Link>
           <div className="flex items-center gap-4">
@@ -108,7 +108,7 @@ export default function HomePage() {
       <footer className="border-t border-border bg-bg-secondary/50">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-6">
           <span className="text-sm text-text-muted font-mono">
-            LeafEdit
+            \Backslash
           </span>
           <span className="text-sm text-text-muted">
             Open-source LaTeX editor
