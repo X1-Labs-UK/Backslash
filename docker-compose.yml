@@ -10,14 +10,12 @@ services:
     entrypoint: ["true"]
     restart: "no"
 
-  # ── PostgreSQL Database (optional) ─────────────────
-  # Remove or comment out this service if you use an
-  # external / hosted database. Set DATABASE_URL in .env
-  # to point at your remote PostgreSQL instance instead.
+  # ── PostgreSQL Database ────────────────────────────
+  # Always starts. If you prefer an external database,
+  # just override DATABASE_URL in .env — the local
+  # postgres will sit idle using minimal resources.
   postgres:
     image: postgres:16-alpine
-    profiles:
-      - postgres
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-backslash}
       POSTGRES_USER: ${POSTGRES_USER:-backslash}
@@ -41,7 +39,7 @@ services:
       dockerfile: apps/web/Dockerfile
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://backslash:backslash@postgres:5432/backslash}
       - REDIS_URL=redis://redis:6379
       - STORAGE_PATH=/data/backslash
       - TEMPLATES_PATH=/app/templates
@@ -65,7 +63,6 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
-        required: false
     networks:
       - backslash
     restart: unless-stopped
