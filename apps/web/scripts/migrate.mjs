@@ -7,6 +7,9 @@
  * application starts.  It applies all pending Drizzle migrations so the
  * database schema is always up-to-date.
  *
+ * Uses createRequire() for package imports so that CJS resolution can
+ * find postgres + drizzle-orm in Next.js standalone node_modules.
+ *
  * Usage:
  *   node scripts/migrate.mjs            (from apps/web/)
  *   node apps/web/scripts/migrate.mjs   (from repo root)
@@ -16,10 +19,17 @@
 
 import path from "node:path";
 import fs from "node:fs";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import postgres from "postgres";
-import { drizzle } from "drizzle-orm/postgres-js";
-import { migrate } from "drizzle-orm/postgres-js/migrator";
+import { createRequire } from "node:module";
+
+// CJS require — resolves packages from node_modules using the standard
+// CommonJS algorithm (walks up directories). Works in Next.js standalone
+// output where ESM resolution fails due to missing package.json exports.
+const require = createRequire(import.meta.url);
+const postgres = require("postgres");
+const { drizzle } = require("drizzle-orm/postgres-js");
+const { migrate } = require("drizzle-orm/postgres-js/migrator");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,7 +112,6 @@ try {
         const sqlContent = fs.readFileSync(sqlPath, "utf-8");
 
         // Compute the same hash Drizzle uses (simple content hash)
-        const { createHash } = await import("node:crypto");
         const hash = createHash("sha256").update(sqlContent).digest("hex");
 
         if (applied.has(hash)) {

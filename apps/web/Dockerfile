@@ -37,10 +37,14 @@ COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
 COPY --from=builder /app/templates ./templates
+COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
+COPY --from=builder /app/apps/web/scripts ./apps/web/scripts
+COPY --from=builder /app/apps/web/docker-entrypoint.sh ./apps/web/docker-entrypoint.sh
 
 # Create data directory
 RUN mkdir -p /data/projects /data/templates
+RUN chmod +x apps/web/docker-entrypoint.sh
 
 EXPOSE 3000
 
-CMD ["node", "apps/web/server.js"]
+ENTRYPOINT ["apps/web/docker-entrypoint.sh"]
