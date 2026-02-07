@@ -60,6 +60,16 @@ Docker Compose automatically:
 - Starts Redis 7 for job queuing
 - Builds and launches the web application on port 3000
 
+### Platform Deployment (Dokploy, Coolify, Portainer, etc.)
+
+If your platform handles networking and reverse proxy for you, add this line to `.env` to **disable host port exposure**:
+
+```env
+COMPOSE_FILE=docker-compose.yml
+```
+
+This tells Docker Compose to skip the override file that publishes the port. Your platform's reverse proxy connects to the container over the Docker network — no port leaks to the host.
+
 ### Environment Variables
 
 Create a `.env` file in the project root (or edit the one from `.env.example`):
@@ -83,6 +93,9 @@ DISABLE_SIGNUP=false
 
 # Set to true if behind HTTPS (reverse proxy with TLS)
 SECURE_COOKIES=false
+
+# Platform deployments (Dokploy, Coolify, etc.) — disables host port binding
+# COMPOSE_FILE=docker-compose.yml
 ```
 
 | Variable | Default | Description |
@@ -96,6 +109,7 @@ SECURE_COOKIES=false
 | `COMPILE_TIMEOUT` | `120` | Compilation timeout in seconds |
 | `DISABLE_SIGNUP` | `false` | Set to `true` to disable new user registration |
 | `SECURE_COOKIES` | `false` | Set to `true` if serving over HTTPS (reverse proxy with TLS) |
+| `COMPOSE_FILE` | *(unset)* | Set to `docker-compose.yml` to disable host port exposure (for platforms) |
 
 ---
 
@@ -170,8 +184,9 @@ backslash/
 │   ├── postgres/         # PostgreSQL init scripts
 │   └── texlive/          # LaTeX compiler Docker image
 ├── templates/            # Built-in project templates
-├── docker-compose.yml    # Production deployment (one-click)
-└── docker-compose.dev.yml # Development services (PostgreSQL + Redis)
+├── docker-compose.yml           # Production deployment (one-click)
+├── docker-compose.override.yml  # Port exposure (auto-loaded, skip for platforms)
+└── docker-compose.dev.yml       # Development services (PostgreSQL + Redis)
 ```
 
 ### Tech Stack
