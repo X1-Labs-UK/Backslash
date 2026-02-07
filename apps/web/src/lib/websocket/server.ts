@@ -92,7 +92,11 @@ export function broadcastBuildUpdate(
 ): void {
   try {
     const message = JSON.stringify({ userId, payload });
-    getPublisher().publish(BUILD_CHANNEL, message);
+    getPublisher()
+      .publish(BUILD_CHANNEL, message)
+      .catch((err: Error) => {
+        console.error("[Broadcast] Redis publish error:", err.message);
+      });
   } catch (err) {
     console.error(
       "[Broadcast] Failed to publish build update:",
@@ -121,7 +125,11 @@ export interface FileEventPayload {
 export function broadcastFileEvent(payload: FileEventPayload): void {
   try {
     const message = JSON.stringify(payload);
-    getPublisher().publish(FILE_CHANNEL, message);
+    getPublisher()
+      .publish(FILE_CHANNEL, message)
+      .catch((err: Error) => {
+        console.error("[Broadcast] Redis file event publish error:", err.message);
+      });
   } catch (err) {
     console.error(
       "[Broadcast] Failed to publish file event:",

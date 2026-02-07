@@ -78,12 +78,8 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
       concurrency: MAX_CONCURRENT_BUILDS,
       // Lock must exceed the max compile time so BullMQ doesn't
       // consider a running job "stalled" and re-queue it.
+      // Auto-renewal happens at lockDuration / 2 (90s) by default.
       lockDuration: LOCK_DURATION_MS,
-      // How often the worker auto-renews the lock (half the lock duration).
-      lockRenewTime: LOCK_DURATION_MS / 2,
-      // How often to check for stalled jobs — must be > lockDuration
-      // to avoid false positives.
-      stalledInterval: LOCK_DURATION_MS + 30_000,
     }
   );
 
@@ -156,19 +152,12 @@ async function processCompileJob(
   try {
     await job.updateProgress(10);
 
-    // Extend the lock right before the long Docker run so we have
-    // the full lockDuration from this point forward.
-    await job.extendLock(job.token!, LOCK_DURATION_MS);
-    console.log(`[Worker] Lock extended for job ${job.id} (${LOCK_DURATION_MS}ms)`);
-
     const containerResult = await runCompileContainer({
       projectDir,
       mainFile,
     });
 
-    // Extend again after Docker finishes — we still need time for
-    // DB writes and the broadcast.
-    await job.extendLock(job.token!, 60_000);
+    console.log(`[Worker] Container finished for job ${job.id}, processing results...`);
     await job.updateProgress(90);
 
     const durationMs = Date.now() - startTime;

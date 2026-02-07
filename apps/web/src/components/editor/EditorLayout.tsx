@@ -109,7 +109,15 @@ export function EditorLayout({
   );
   const [buildErrors, setBuildErrors] = useState<LogError[]>([]);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [autoCompileEnabled, setAutoCompileEnabled] = useState(true);
+
+  // Step 3a: Disable auto-compile if last build failed
+  const [autoCompileEnabled, setAutoCompileEnabled] = useState(() => {
+    if (initialBuild?.status === "error" || initialBuild?.status === "timeout") {
+      return false;
+    }
+    return true;
+  });
+
   const [dirtyFileIds, setDirtyFileIds] = useState<Set<string>>(new Set());
 
   // ─── Collaboration State ──────────────────────────
@@ -117,14 +125,34 @@ export function EditorLayout({
   const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
 
+  // Step 2b: Remote changes state for CodeEditor
+  const [remoteChanges, setRemoteChanges] = useState<{
+    fileId: string;
+    userId: string;
+    changes: DocChange[];
+  } | null>(null);
+
+  // Step 2c: Remote cursors state for CodeEditor
+  const [remoteCursors, setRemoteCursors] = useState<
+    Map<string, { color: string; name: string; selection: CursorSelection }>
+  >(new Map());
+
   // User color map for chat
   const userColorMap = new Map<string, string>();
   presenceUsers.forEach((u) => userColorMap.set(u.userId, u.color));
 
   const codeEditorRef = useRef<CodeEditorHandle>(null);
   const savedContentRef = useRef<Map<string, string>>(new Map());
+
+  // Step 2a: File contents cache
+  const fileContentsRef = useRef<Map<string, string>>(new Map());
+
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Ref to track activeFileId in callbacks without stale closures
+  const activeFileIdRef = useRef<string | null>(null);
+  activeFileIdRef.current = activeFileId;
 
   // ─── WebSocket Integration ────────────────────────
 
@@ -155,6 +183,17 @@ export function EditorLayout({
       }
       if (data.status === "success") {
         setPdfUrl(`/api/projects/${project.id}/pdf?t=${Date.now()}`);
+        // Step 3c: Resume auto-compile on successful build
+        setAutoCompileEnabled(true);
+      }
+      // Step 3b: Disable auto-compile on failure
+      if (data.status === "error" || data.status === "timeout") {
+        setAutoCompileEnabled(false);
+        // Step 3d: Cancel pending auto-save compile on failure
+        if (saveTimeoutRef.current) {
+          clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
       }
       setPdfLoading(false);
     },
@@ -170,6 +209,12 @@ export function EditorLayout({
     },
     onPresenceLeft: (userId) => {
       setPresenceUsers((prev) => prev.filter((u) => u.userId !== userId));
+      // Clear cursor for user who left
+      setRemoteCursors((prev) => {
+        const next = new Map(prev);
+        next.delete(userId);
+        return next;
+      });
     },
     onPresenceUpdated: (data) => {
       setPresenceUsers((prev) =>
@@ -198,10 +243,102 @@ export function EditorLayout({
         handleCloseTab(data.fileId);
       }
     },
-    onFileSaved: () => {
-      // Another user saved a file -- could refresh if we want
+    // Step 2e: Handle file saved by another user
+    onFileSaved: (data) => {
+      if (data.fileId !== activeFileIdRef.current) {
+        // Invalidate cache so next switch fetches fresh
+        fileContentsRef.current.delete(data.fileId);
+      } else {
+        // Active file was saved by another user — fetch latest
+        fetchFileContent(data.fileId);
+      }
+    },
+    // Step 2b: Handle doc changes from other users
+    onDocChanged: (data) => {
+      const { userId, fileId, changes } = data;
+      if (fileId === activeFileIdRef.current) {
+        // Trigger granular update in CodeEditor
+        setRemoteChanges({ fileId, userId, changes });
+      }
+      // Also update the cache for non-active files
+      applyChangesToCache(fileId, changes);
+    },
+    // Step 2c: Handle cursor events
+    onCursorUpdated: (data) => {
+      if (data.fileId === activeFileIdRef.current) {
+        setRemoteCursors((prev) => {
+          const next = new Map(prev);
+          const user = presenceUsers.find((u) => u.userId === data.userId);
+          next.set(data.userId, {
+            color: user?.color || "#888",
+            name: user?.name || "Unknown",
+            selection: data.selection,
+          });
+          return next;
+        });
+      }
+    },
+    onCursorCleared: (userId) => {
+      setRemoteCursors((prev) => {
+        const next = new Map(prev);
+        next.delete(userId);
+        return next;
+      });
     },
   });
+
+  // ─── Helpers ───────────────────────────────────────
+
+  // Apply granular changes to cached string for a file
+  const applyChangesToCache = useCallback(
+    (fileId: string, changes: DocChange[]) => {
+      const cached = fileContentsRef.current.get(fileId);
+      if (cached === undefined) return;
+
+      let result = cached;
+      // Apply changes in reverse order to preserve positions
+      const sorted = [...changes].sort((a, b) => b.from - a.from);
+      for (const change of sorted) {
+        const from = Math.min(change.from, result.length);
+        const to = Math.min(change.to, result.length);
+        result = result.slice(0, from) + change.insert + result.slice(to);
+      }
+      fileContentsRef.current.set(fileId, result);
+    },
+    []
+  );
+
+  // Fetch file content from server
+  const fetchFileContent = useCallback(
+    async (fileId: string) => {
+      try {
+        const res = await fetch(
+          `/api/projects/${project.id}/files/${fileId}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.content ?? "";
+          // Update cache
+          fileContentsRef.current.set(fileId, content);
+          // If this is still the active file, update state
+          if (activeFileIdRef.current === fileId) {
+            setActiveFileContent(content);
+          }
+          savedContentRef.current.set(fileId, content);
+          setDirtyFileIds((prev) => {
+            const next = new Set(prev);
+            next.delete(fileId);
+            return next;
+          });
+        }
+      } catch {
+        if (activeFileIdRef.current === fileId) {
+          setActiveFileContent("");
+        }
+      }
+    },
+    [project.id]
+  );
 
   // ─── Polling fallback for build completion ────────
 
@@ -238,6 +375,14 @@ export function EditorLayout({
                 setPdfUrl(
                   `/api/projects/${project.id}/pdf?t=${Date.now()}`
                 );
+                setAutoCompileEnabled(true);
+              }
+              if (build.status === "error" || build.status === "timeout") {
+                setAutoCompileEnabled(false);
+                if (saveTimeoutRef.current) {
+                  clearTimeout(saveTimeoutRef.current);
+                  saveTimeoutRef.current = null;
+                }
               }
               setPdfLoading(false);
             }
@@ -258,6 +403,7 @@ export function EditorLayout({
       setCompiling((prev) => {
         if (prev) {
           setBuildStatus("timeout");
+          setAutoCompileEnabled(false);
           setPdfLoading(false);
         }
         return false;
@@ -265,37 +411,32 @@ export function EditorLayout({
     }, 120_000);
   }, [project.id]);
 
-  // Fetch file content when active file changes
+  // Step 4b: Fetch file content when active file changes — check cache first
   useEffect(() => {
     if (!activeFileId) return;
 
-    async function fetchFileContent() {
-      try {
-        const res = await fetch(
-          `/api/projects/${project.id}/files/${activeFileId}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const content = data.content ?? "";
-          setActiveFileContent(content);
-          savedContentRef.current.set(activeFileId!, content);
-          setDirtyFileIds((prev) => {
-            const next = new Set(prev);
-            next.delete(activeFileId!);
-            return next;
-          });
-        }
-      } catch {
-        setActiveFileContent("");
-      }
+    // Check cache first
+    const cached = fileContentsRef.current.get(activeFileId);
+    if (cached !== undefined) {
+      setActiveFileContent(cached);
+      return;
     }
 
-    fetchFileContent();
-  }, [activeFileId, project.id]);
+    // Not cached — fetch from server
+    fetchFileContent(activeFileId);
+  }, [activeFileId, fetchFileContent]);
 
-  // Open a file in the editor
+  // Step 4a: Open a file in the editor — save content before switching
   const handleFileSelect = useCallback(
     (fileId: string, filePath: string) => {
+      // Save current content to cache before switching
+      if (activeFileId && activeFileContent !== undefined) {
+        fileContentsRef.current.set(activeFileId, activeFileContent);
+      }
+
+      // Clear remote cursors when switching files (they belong to different files)
+      setRemoteCursors(new Map());
+
       setActiveFileId(fileId);
 
       const alreadyOpen = openFiles.some((f) => f.id === fileId);
@@ -306,7 +447,7 @@ export function EditorLayout({
       // Broadcast active file to other users
       sendActiveFile(fileId, filePath);
     },
-    [openFiles, sendActiveFile]
+    [openFiles, sendActiveFile, activeFileId, activeFileContent]
   );
 
   // Close a tab
@@ -327,6 +468,7 @@ export function EditorLayout({
         return next;
       });
       savedContentRef.current.delete(fileId);
+      fileContentsRef.current.delete(fileId);
     },
     [activeFileId]
   );
@@ -371,7 +513,10 @@ export function EditorLayout({
     (content: string) => {
       setActiveFileContent(content);
 
+      // Update file contents cache
       if (activeFileId) {
+        fileContentsRef.current.set(activeFileId, content);
+
         const savedContent = savedContentRef.current.get(activeFileId);
         if (savedContent !== content) {
           setDirtyFileIds((prev) => {
@@ -548,7 +693,14 @@ export function EditorLayout({
                     openFiles={openFiles}
                     activeFileId={activeFileId}
                     dirtyFileIds={dirtyFileIds}
-                    onSelectTab={setActiveFileId}
+                    onSelectTab={(fileId) => {
+                      // Save current content before switching tabs
+                      if (activeFileId && activeFileContent !== undefined) {
+                        fileContentsRef.current.set(activeFileId, activeFileContent);
+                      }
+                      setRemoteCursors(new Map());
+                      setActiveFileId(fileId);
+                    }}
                     onCloseTab={handleCloseTab}
                   />
                   <div className="flex-1 min-h-0">
@@ -558,6 +710,14 @@ export function EditorLayout({
                         content={activeFileContent}
                         onChange={handleEditorChange}
                         language="latex"
+                        onDocChange={(changes) => {
+                          if (activeFileId) sendDocChange(activeFileId, changes, Date.now());
+                        }}
+                        onCursorChange={(selection) => {
+                          if (activeFileId) sendCursorMove(activeFileId, selection);
+                        }}
+                        remoteChanges={remoteChanges}
+                        remoteCursors={remoteCursors}
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center animate-fade-in">
