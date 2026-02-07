@@ -46,8 +46,9 @@ COPY --from=builder /app/apps/web/docker-entrypoint.sh ./apps/web/docker-entrypo
 # The migration script runs BEFORE the app starts and uses ESM imports
 # of postgres + drizzle-orm. Next.js standalone bundles these into webpack
 # chunks (not node_modules), so they aren't resolvable by the script.
-# Install them explicitly for the migrate script to use.
-RUN pnpm add -P postgres drizzle-orm
+# Install into a separate directory so we don't clobber standalone's node_modules.
+RUN mkdir -p /app/migrate-deps && cd /app/migrate-deps \
+    && pnpm add postgres drizzle-orm
 
 # Create data directory
 RUN mkdir -p /data/projects /data/templates

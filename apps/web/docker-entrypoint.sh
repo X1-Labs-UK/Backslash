@@ -2,7 +2,7 @@
 set -e
 
 echo "── Running database migrations ──"
-node apps/web/scripts/migrate.mjs
+NODE_PATH=/app/migrate-deps/node_modules node apps/web/scripts/migrate.mjs
 
 echo "── Starting application ──"
 exec node apps/web/server.js
