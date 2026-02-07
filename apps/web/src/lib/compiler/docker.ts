@@ -164,10 +164,14 @@ export async function runCompileContainer(
   const docker = getDockerClient();
   const { projectDir, mainFile } = options;
 
+  console.log(`[Docker] Starting compilation: dir=${projectDir} file=${mainFile}`);
+
   const engine = await detectEngine(projectDir, mainFile);
   const engineFlag = ENGINE_FLAGS[engine];
   const memoryBytes = parseMemoryString(COMPILE_MEMORY);
   const nanoCpus = Math.floor(COMPILE_CPUS * 1e9);
+
+  console.log(`[Docker] Engine: ${engine}, Image: ${COMPILER_IMAGE}, Volume: ${PROJECTS_VOLUME} -> ${STORAGE_PATH}`);
 
   const cmd = [
     "latexmk",
@@ -185,6 +189,7 @@ export async function runCompileContainer(
   let timedOut = false;
 
   try {
+    console.log(`[Docker] Creating container with WorkingDir=${projectDir}, cmd=${cmd.join(" ")}`);
     container = await docker.createContainer({
       Image: COMPILER_IMAGE,
       Cmd: cmd,
@@ -207,6 +212,7 @@ export async function runCompileContainer(
         AutoRemove: false,
       },
     });
+    console.log(`[Docker] Container created: ${container.id.slice(0, 12)}`);
 
     // Attach to stdout/stderr before starting
     const stream = await container.attach({
@@ -218,6 +224,7 @@ export async function runCompileContainer(
     const logsPromise = collectLogs(stream);
 
     await container.start();
+    console.log(`[Docker] Container started: ${container.id.slice(0, 12)}`);
 
     // Enforce timeout via JS setTimeout
     const timeoutPromise = new Promise<"timeout">((resolve) => {
@@ -236,12 +243,12 @@ export async function runCompileContainer(
 
     if (race === "timeout") {
       timedOut = true;
+      console.warn(`[Docker] Container ${container.id.slice(0, 12)} timed out after ${COMPILE_TIMEOUT}s`);
       try {
         await container.kill();
       } catch {
         // Container may have already exited
       }
-      // Wait for container to fully stop after kill
       try {
         await container.wait();
       } catch {
@@ -249,15 +256,16 @@ export async function runCompileContainer(
       }
     } else {
       exitCode = race.StatusCode;
+      console.log(`[Docker] Container ${container.id.slice(0, 12)} exited with code ${exitCode}`);
     }
 
     logs = await logsPromise;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    console.error(`[Docker] Container error: ${message}`);
     logs = `[Docker] Container error: ${message}`;
     exitCode = -1;
   } finally {
-    // Always clean up the container
     if (container) {
       try {
         await container.remove({ force: true });

@@ -3,6 +3,7 @@ import { projects, builds } from "@/lib/db/schema";
 import { withAuth } from "@/lib/auth/middleware";
 import { addCompileJob } from "@/lib/compiler/queue";
 import { checkProjectAccess } from "@/lib/db/queries/projects";
+import { healthCheck as dockerHealthCheck, getDockerClient } from "@/lib/compiler/docker";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
@@ -27,6 +28,34 @@ export async function POST(
       }
 
       const project = access.project;
+
+      // ── Pre-flight: verify Docker is reachable ───────
+      const dockerOk = await dockerHealthCheck();
+      if (!dockerOk) {
+        console.error("[Compile] Docker daemon is not reachable");
+        return NextResponse.json(
+          { error: "Compilation service unavailable — Docker daemon not reachable" },
+          { status: 503 }
+        );
+      }
+
+      // ── Pre-flight: verify compiler image exists ─────
+      try {
+        const docker = getDockerClient();
+        const compilerImage = process.env.COMPILER_IMAGE || "backslash-compiler";
+        const images = await docker.listImages({
+          filters: { reference: [compilerImage] },
+        });
+        if (images.length === 0) {
+          console.error(`[Compile] Compiler image "${compilerImage}" not found`);
+          return NextResponse.json(
+            { error: `Compiler image "${compilerImage}" not found on Docker host` },
+            { status: 503 }
+          );
+        }
+      } catch (imgErr) {
+        console.error("[Compile] Failed to check compiler image:", imgErr);
+      }
 
       const buildId = uuidv4();
 

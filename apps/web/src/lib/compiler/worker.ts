@@ -1,11 +1,12 @@
 import { Worker, type Job } from "bullmq";
 import { eq } from "drizzle-orm";
 import { LIMITS } from "@backslash/shared";
+import IORedis from "ioredis";
 
 import { db } from "@/lib/db";
 import { builds } from "@/lib/db/schema";
 import { getProjectDir, getPdfPath, fileExists } from "@/lib/storage";
-import { getRedisConnection, type CompileJobData, type CompileJobResult } from "./queue";
+import { type CompileJobData, type CompileJobResult } from "./queue";
 import { runCompileContainer } from "./docker";
 import { parseLatexLog } from "./logParser";
 import { broadcastBuildUpdate } from "@/lib/websocket/server";
@@ -13,6 +14,7 @@ import { broadcastBuildUpdate } from "@/lib/websocket/server";
 // ─── Configuration ─────────────────────────────────
 
 const QUEUE_NAME = "compile";
+const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 
 const MAX_CONCURRENT_BUILDS = parseInt(
   process.env.MAX_CONCURRENT_BUILDS ||
@@ -39,7 +41,23 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
     return workerInstance;
   }
 
-  const connection = getRedisConnection();
+  // Worker MUST have its own Redis connection — BullMQ uses blocking
+  // commands (BRPOPLPUSH) that interfere with the queue's connection.
+  const workerConnection = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+    retryStrategy(times: number) {
+      return Math.min(times * 200, 5000);
+    },
+  });
+
+  workerConnection.on("error", (err) => {
+    console.error("[Worker Redis] Connection error:", err.message);
+  });
+
+  workerConnection.on("connect", () => {
+    console.log("[Worker Redis] Connected successfully");
+  });
 
   workerInstance = new Worker<CompileJobData, CompileJobResult>(
     QUEUE_NAME,
@@ -48,7 +66,7 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
       return processCompileJob(job);
     },
     {
-      connection,
+      connection: workerConnection,
       concurrency: MAX_CONCURRENT_BUILDS,
     }
   );
