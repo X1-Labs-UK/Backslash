@@ -25,14 +25,17 @@ COPY templates/ templates/
 WORKDIR /app/apps/web
 RUN pnpm run build
 
+# Prepare migration deps in an isolated directory (outside pnpm workspace)
+# so they can be copied cleanly to the production image.
+RUN mkdir -p /migrate-deps && cd /migrate-deps \
+    && npm init -y && npm install --production postgres drizzle-orm
+
 # ── Production Stage ─────────────────────────────────
 FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
-
-RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy built app
 COPY --from=builder /app/apps/web/.next/standalone ./
@@ -43,12 +46,8 @@ COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
 COPY --from=builder /app/apps/web/scripts ./apps/web/scripts
 COPY --from=builder /app/apps/web/docker-entrypoint.sh ./apps/web/docker-entrypoint.sh
 
-# The migration script runs BEFORE the app starts and uses ESM imports
-# of postgres + drizzle-orm. Next.js standalone bundles these into webpack
-# chunks (not node_modules), so they aren't resolvable by the script.
-# Install into a separate directory so we don't clobber standalone's node_modules.
-RUN mkdir -p /app/migrate-deps && cd /app/migrate-deps \
-    && pnpm add postgres drizzle-orm
+# Migration deps — isolated from standalone's node_modules
+COPY --from=builder /migrate-deps/node_modules ./migrate-deps/node_modules
 
 # Create data directory
 RUN mkdir -p /data/projects /data/templates
