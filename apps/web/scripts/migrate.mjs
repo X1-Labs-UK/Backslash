@@ -68,7 +68,16 @@ try {
   // (legacy database created by a previous init.sql), apply each
   // migration statement individually, skip "already exists" errors,
   // and record them in Drizzle's journal so future runs are clean.
-  if (msg.includes("already exists")) {
+  //
+  // Drizzle wraps the Postgres error as "Failed query: CREATE TYPE ..."
+  // so we check for both patterns.
+  const isSchemaConflict =
+    msg.includes("already exists") ||
+    msg.includes("Failed query: CREATE TYPE") ||
+    msg.includes("Failed query: CREATE TABLE") ||
+    msg.includes("Failed query: CREATE INDEX");
+
+  if (isSchemaConflict) {
     console.log("[migrate] ⚠ Detected pre-existing schema, applying migrations individually...");
 
     try {
