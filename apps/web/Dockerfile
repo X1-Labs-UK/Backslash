@@ -32,9 +32,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy built app — standalone output includes traced node_modules
-# with postgres + drizzle-orm (used by lib/db), so the migration
-# script can resolve them without an extra install step.
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copy built app
 COPY --from=builder /app/apps/web/.next/standalone ./
 COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
 COPY --from=builder /app/apps/web/public ./apps/web/public
@@ -42,6 +42,12 @@ COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
 COPY --from=builder /app/apps/web/scripts ./apps/web/scripts
 COPY --from=builder /app/apps/web/docker-entrypoint.sh ./apps/web/docker-entrypoint.sh
+
+# The migration script runs BEFORE the app starts and uses ESM imports
+# of postgres + drizzle-orm. Next.js standalone bundles these into webpack
+# chunks (not node_modules), so they aren't resolvable by the script.
+# Install them explicitly for the migrate script to use.
+RUN pnpm add -P postgres drizzle-orm
 
 # Create data directory
 RUN mkdir -p /data/projects /data/templates
