@@ -40,6 +40,11 @@ COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
 COPY --from=builder /app/apps/web/scripts ./apps/web/scripts
 
+# Install migration dependencies (postgres, drizzle-orm) in an isolated
+# directory. Next.js standalone bundles these into webpack chunks so they
+# are NOT available in node_modules for the migration script.
+RUN npm install --prefix /migrate-deps postgres drizzle-orm 2>/dev/null
+
 # Create data directory
 RUN mkdir -p /data/projects /data/templates
 

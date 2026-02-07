@@ -23,13 +23,16 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 
-// CJS require — resolves packages from node_modules using the standard
-// CommonJS algorithm (walks up directories). Works in Next.js standalone
-// output where ESM resolution fails due to missing package.json exports.
-const require = createRequire(import.meta.url);
-const postgres = require("postgres");
-const { drizzle } = require("drizzle-orm/postgres-js");
-const { migrate } = require("drizzle-orm/postgres-js/migrator");
+// CJS require — In Docker, the migration deps live in /migrate-deps
+// (installed separately because Next.js standalone bundles them into
+// webpack chunks, not into node_modules). For local dev, fall back to
+// resolving from the script's own location.
+const migrateDeps = fs.existsSync("/migrate-deps/node_modules")
+  ? createRequire("/migrate-deps/node_modules/")
+  : createRequire(import.meta.url);
+const postgres = migrateDeps("postgres");
+const { drizzle } = migrateDeps("drizzle-orm/postgres-js");
+const { migrate } = migrateDeps("drizzle-orm/postgres-js/migrator");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
