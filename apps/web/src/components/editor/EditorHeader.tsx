@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { cn } from "@/lib/utils/cn";
 import {
   Play,
@@ -10,6 +11,7 @@ import {
   ZapOff,
   CheckCircle2,
   XCircle,
+  Share2,
 } from "lucide-react";
 import {
   Tooltip,
@@ -18,6 +20,9 @@ import {
   TooltipProvider,
 } from "@/components/ui/tooltip";
 import { AppHeader } from "@/components/AppHeader";
+import { PresenceAvatars } from "@/components/editor/PresenceAvatars";
+import { ShareDialog } from "@/components/editor/ShareDialog";
+import type { PresenceUser } from "@backslash/shared";
 
 // ─── Types ──────────────────────────────────────────
 
@@ -29,6 +34,9 @@ interface EditorHeaderProps {
   autoCompileEnabled: boolean;
   onAutoCompileToggle: () => void;
   buildStatus: string;
+  presenceUsers?: PresenceUser[];
+  currentUserId?: string;
+  role?: "owner" | "viewer" | "editor";
 }
 
 // ─── Build Status Badge ────────────────────────────
@@ -73,7 +81,12 @@ export function EditorHeader({
   autoCompileEnabled,
   onAutoCompileToggle,
   buildStatus,
+  presenceUsers = [],
+  currentUserId = "",
+  role = "owner",
 }: EditorHeaderProps) {
+  const [shareOpen, setShareOpen] = useState(false);
+
   function handleDownloadPdf() {
     window.open(`/api/projects/${projectId}/pdf?download=true`, "_blank");
   }
@@ -83,6 +96,7 @@ export function EditorHeader({
   }
 
   return (
+    <>
     <AppHeader>
       {/* Compilation progress bar */}
       {(buildStatus === "compiling" || buildStatus === "queued") && (
@@ -157,6 +171,41 @@ export function EditorHeader({
 
       <BuildStatusBadge status={buildStatus} />
 
+      {/* Spacer */}
+      <div className="flex-1" />
+
+      {/* Role badge (for shared users) */}
+      {role !== "owner" && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-bg-elevated px-2 py-0.5 text-[10px] font-medium text-text-muted border border-border">
+          {role === "editor" ? "Editor" : "Viewer"}
+        </span>
+      )}
+
+      {/* Presence avatars */}
+      <PresenceAvatars
+        users={presenceUsers}
+        currentUserId={currentUserId}
+      />
+
+      {/* Share button */}
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => setShareOpen(true)}
+              className="flex items-center gap-1.5 rounded-md border border-border bg-bg-tertiary px-2.5 py-1 text-xs text-text-secondary transition-colors hover:text-accent hover:border-accent/30 hover:bg-accent/5"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span className="hidden md:inline">Share</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>Share project</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
       <div className="h-4 w-px bg-border shrink-0" />
 
       {/* Download buttons */}
@@ -194,5 +243,15 @@ export function EditorHeader({
         </Tooltip>
       </TooltipProvider>
     </AppHeader>
+
+    {/* Share Dialog */}
+    <ShareDialog
+      projectId={projectId}
+      projectName={projectName}
+      open={shareOpen}
+      onClose={() => setShareOpen(false)}
+      isOwner={role === "owner"}
+    />
+    </>
   );
 }

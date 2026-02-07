@@ -20,3 +20,6 @@ services:
   app:
     ports:
       - "${PORT:-3000}:3000"
+  ws:
+    ports:
+      - "${WS_PORT:-3001}:3001"

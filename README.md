@@ -13,7 +13,7 @@
 
 ## ✨ Features
 
-- **Live PDF Preview** — See your document update in real-time as you type. Auto-compilation on save with WebSocket-powered status updates.
+- **Live PDF Preview** — See your document update in real-time as you type. Auto-compilation on save with real-time WebSocket status updates via a standalone server.
 - **Full LaTeX Engine Support** — Compile with `pdflatex`, `xelatex`, `lualatex`, or `latex`. Engine auto-detection based on document packages.
 - **Project Management** — Create, organize, and manage multiple LaTeX projects from a clean dashboard.
 - **Built-in File Tree** — Navigate project files with a sidebar file explorer. Create, rename, upload, and delete files.
@@ -59,6 +59,7 @@ Docker Compose automatically:
 - Starts PostgreSQL 16 with persistent storage
 - Starts Redis 7 for job queuing
 - Builds and launches the web application on port 3000
+- Starts the WebSocket server on port 3001 for real-time build updates
 
 ### Platform Deployment (Dokploy, Coolify, Portainer, etc.)
 
@@ -76,6 +77,7 @@ Create a `.env` file in the project root (or edit the one from `.env.example`):
 
 ```env
 PORT=3000
+WS_PORT=3001
 SESSION_SECRET=change-me-to-a-random-64-char-string
 
 # Only set this if you want to use an external database.
@@ -94,6 +96,10 @@ DISABLE_SIGNUP=false
 # Set to true if behind HTTPS (reverse proxy with TLS)
 SECURE_COOKIES=false
 
+# WebSocket — override the URL the frontend connects to
+# (default: same hostname, port 3001)
+# NEXT_PUBLIC_WS_URL=https://your-domain.com/ws
+
 # Platform deployments (Dokploy, Coolify, etc.) — disables host port binding
 # COMPOSE_FILE=docker-compose.yml
 ```
@@ -101,6 +107,7 @@ SECURE_COOKIES=false
 | Variable | Default | Description |
 |---|---|---|
 | `PORT` | `3000` | Host port to expose the app on |
+| `WS_PORT` | `3001` | Host port to expose the WebSocket server on |
 | `SESSION_SECRET` | — | Secret key for signing session tokens (**required**) |
 | `DATABASE_URL` | *(bundled postgres)* | Override to use an external PostgreSQL instance |
 | `COMPILE_MEMORY` | `1g` | Memory limit per compile container |
@@ -109,6 +116,7 @@ SECURE_COOKIES=false
 | `COMPILE_TIMEOUT` | `120` | Compilation timeout in seconds |
 | `DISABLE_SIGNUP` | `false` | Set to `true` to disable new user registration |
 | `SECURE_COOKIES` | `false` | Set to `true` if serving over HTTPS (reverse proxy with TLS) |
+| `NEXT_PUBLIC_WS_URL` | *(auto-detect)* | Override WebSocket server URL for the frontend (e.g. `wss://your-domain.com/ws`) |
 | `COMPOSE_FILE` | *(unset)* | Set to `docker-compose.yml` to disable host port exposure (for platforms) |
 
 ---
@@ -176,7 +184,8 @@ Full interactive API documentation is available at `/dashboard/developers/docs` 
 ```
 backslash/
 ├── apps/
-│   ├── web/              # Next.js 15 app (frontend + API + WebSocket server)
+│   ├── web/              # Next.js 15 app (frontend + API)
+│   ├── ws/               # Standalone WebSocket server (Socket.IO + Redis pub/sub)
 │   └── worker/           # Background build worker (BullMQ)
 ├── packages/
 │   └── shared/           # Shared types, constants, and utilities
@@ -194,7 +203,8 @@ backslash/
 | Layer | Technology |
 |---|---|
 | **Frontend** | Next.js 15 (App Router), React 19, Tailwind CSS 4, CodeMirror 6, react-pdf |
-| **Backend** | Next.js API Routes, Socket.IO (WebSocket), BullMQ (job queue) |
+| **Backend** | Next.js API Routes, BullMQ (job queue), Redis pub/sub |
+| **Real-time** | Standalone Socket.IO server (WebSocket), Redis pub/sub bridge |
 | **Database** | PostgreSQL 16 with Drizzle ORM |
 | **Cache / Queue** | Redis 7 (session cache + BullMQ broker) |
 | **Compilation** | Docker containers via dockerode (ephemeral, sandboxed, per-build) |
@@ -344,7 +354,7 @@ apps/web/src/
 │   ├── utils/                # Utilities (cn, errors, validation)
 │   └── websocket/            # Real-time communication
 │       ├── events.ts         # WebSocket event types & room helpers
-│       └── server.ts         # Socket.IO server initialization
+│       └── server.ts         # Redis pub/sub broadcast (publishes build updates)
 └── stores/                   # Zustand state stores
     ├── buildStore.ts         # Build state management
     └── editorStore.ts        # Editor state management
@@ -421,7 +431,7 @@ Backslash is built on the shoulders of incredible open-source projects. We're gr
 | [Redis](https://redis.io/) | In-memory data store for caching and queuing | BSD-3-Clause |
 | [BullMQ](https://docs.bullmq.io/) | Job queue for Node.js built on Redis | MIT |
 | [ioredis](https://github.com/redis/ioredis) | Redis client for Node.js | MIT |
-| [Socket.IO](https://socket.io/) | Real-time bidirectional WebSocket communication | MIT |
+| [Socket.IO](https://socket.io/) | Real-time WebSocket communication (standalone server) | MIT |
 
 ### Compilation & Containers
 

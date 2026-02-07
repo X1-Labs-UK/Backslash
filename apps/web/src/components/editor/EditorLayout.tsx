@@ -12,8 +12,10 @@ import { CodeEditor, CodeEditorHandle } from "@/components/editor/CodeEditor";
 import { EditorTabs } from "@/components/editor/EditorTabs";
 import { PdfViewer } from "@/components/editor/PdfViewer";
 import { BuildLogs } from "@/components/editor/BuildLogs";
+import { ChatPanel } from "@/components/editor/ChatPanel";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { FileText } from "lucide-react";
+import type { PresenceUser, ChatMessage, CursorSelection, DocChange } from "@backslash/shared";
 
 // ─── Types ──────────────────────────────────────────
 
@@ -65,10 +67,18 @@ interface LogError {
   message: string;
 }
 
+interface CurrentUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
 interface EditorLayoutProps {
   project: Project;
   files: ProjectFile[];
   lastBuild: Build | null;
+  role?: "owner" | "viewer" | "editor";
+  currentUser?: CurrentUser;
 }
 
 // ─── Editor Layout ──────────────────────────────────
@@ -77,6 +87,8 @@ export function EditorLayout({
   project,
   files: initialFiles,
   lastBuild: initialBuild,
+  role = "owner",
+  currentUser = { id: "", email: "", name: "" },
 }: EditorLayoutProps) {
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -100,16 +112,28 @@ export function EditorLayout({
   const [autoCompileEnabled, setAutoCompileEnabled] = useState(true);
   const [dirtyFileIds, setDirtyFileIds] = useState<Set<string>>(new Set());
 
+  // ─── Collaboration State ──────────────────────────
+
+  const [presenceUsers, setPresenceUsers] = useState<PresenceUser[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  // User color map for chat
+  const userColorMap = new Map<string, string>();
+  presenceUsers.forEach((u) => userColorMap.set(u.userId, u.color));
+
   const codeEditorRef = useRef<CodeEditorHandle>(null);
-  // Track saved content per file to detect dirtiness
   const savedContentRef = useRef<Map<string, string>>(new Map());
-  // Track active poll interval so we can clear it
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ─── WebSocket Integration ────────────────────────
 
-  useWebSocket(project.id, {
+  const {
+    sendActiveFile,
+    sendCursorMove,
+    sendDocChange,
+    sendChatMessage,
+  } = useWebSocket(project.id, {
     onBuildStatus: (data) => {
       setBuildStatus(data.status);
       setCompiling(true);
@@ -121,7 +145,6 @@ export function EditorLayout({
       setBuildDuration(data.durationMs);
       setBuildErrors((data.errors as LogError[]) ?? []);
       setCompiling(false);
-      // Clear polling since WS handled it
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
@@ -130,11 +153,53 @@ export function EditorLayout({
         clearTimeout(pollTimeoutRef.current);
         pollTimeoutRef.current = null;
       }
-
       if (data.status === "success") {
         setPdfUrl(`/api/projects/${project.id}/pdf?t=${Date.now()}`);
       }
       setPdfLoading(false);
+    },
+    // Presence events
+    onPresenceUsers: (users) => {
+      setPresenceUsers(users);
+    },
+    onPresenceJoined: (user) => {
+      setPresenceUsers((prev) => {
+        if (prev.find((u) => u.userId === user.userId)) return prev;
+        return [...prev, user];
+      });
+    },
+    onPresenceLeft: (userId) => {
+      setPresenceUsers((prev) => prev.filter((u) => u.userId !== userId));
+    },
+    onPresenceUpdated: (data) => {
+      setPresenceUsers((prev) =>
+        prev.map((u) =>
+          u.userId === data.userId
+            ? { ...u, activeFileId: data.activeFileId, activeFilePath: data.activeFilePath }
+            : u
+        )
+      );
+    },
+    // Chat events
+    onChatMessage: (message) => {
+      setChatMessages((prev) => [...prev, message]);
+    },
+    onChatHistory: (messages) => {
+      setChatMessages(messages);
+    },
+    // File events from other users
+    onFileCreated: () => {
+      refreshFiles();
+    },
+    onFileDeleted: (data) => {
+      refreshFiles();
+      // Close the deleted file's tab if open
+      if (openFiles.some((f) => f.id === data.fileId)) {
+        handleCloseTab(data.fileId);
+      }
+    },
+    onFileSaved: () => {
+      // Another user saved a file -- could refresh if we want
     },
   });
 
@@ -237,8 +302,11 @@ export function EditorLayout({
       if (!alreadyOpen) {
         setOpenFiles((prev) => [...prev, { id: fileId, path: filePath }]);
       }
+
+      // Broadcast active file to other users
+      sendActiveFile(fileId, filePath);
     },
-    [openFiles]
+    [openFiles, sendActiveFile]
   );
 
   // Close a tab
@@ -449,10 +517,13 @@ export function EditorLayout({
         autoCompileEnabled={autoCompileEnabled}
         onAutoCompileToggle={() => setAutoCompileEnabled((prev) => !prev)}
         buildStatus={buildStatus}
+        presenceUsers={presenceUsers}
+        currentUserId={currentUser.id}
+        role={role}
       />
 
       {/* Main content area */}
-      <div className="flex-1 min-h-0">
+      <div className="flex-1 min-h-0 relative">
         <PanelGroup direction="vertical">
           {/* Editor panels */}
           <Panel defaultSize={80} minSize={40}>
@@ -531,6 +602,14 @@ export function EditorLayout({
             />
           </Panel>
         </PanelGroup>
+
+        {/* Chat Panel */}
+        <ChatPanel
+          messages={chatMessages}
+          onSendMessage={sendChatMessage}
+          currentUserId={currentUser.id}
+          userColors={userColorMap}
+        />
       </div>
     </div>
   );

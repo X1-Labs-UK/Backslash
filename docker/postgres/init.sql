@@ -7,6 +7,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 CREATE TYPE "public"."build_status" AS ENUM('queued', 'compiling', 'success', 'error', 'timeout');
 CREATE TYPE "public"."engine" AS ENUM('pdflatex', 'xelatex', 'lualatex', 'latex');
+CREATE TYPE "public"."share_role" AS ENUM('viewer', 'editor');
 
 -- ── Tables ──────────────────────────────────────────
 
@@ -77,12 +78,26 @@ CREATE TABLE "api_keys" (
 
 -- ── Foreign Keys ────────────────────────────────────
 
+CREATE TABLE "project_shares" (
+    "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+    "project_id" uuid NOT NULL,
+    "user_id" uuid NOT NULL,
+    "role" "share_role" DEFAULT 'viewer' NOT NULL,
+    "invited_by" uuid NOT NULL,
+    "created_at" timestamp DEFAULT now() NOT NULL
+);
+
+-- ── Foreign Keys ────────────────────────────────────
+
 ALTER TABLE "sessions" ADD CONSTRAINT "sessions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "projects" ADD CONSTRAINT "projects_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "project_files" ADD CONSTRAINT "project_files_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "builds" ADD CONSTRAINT "builds_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "builds" ADD CONSTRAINT "builds_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 ALTER TABLE "api_keys" ADD CONSTRAINT "api_keys_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "project_shares" ADD CONSTRAINT "project_shares_project_id_projects_id_fk" FOREIGN KEY ("project_id") REFERENCES "public"."projects"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "project_shares" ADD CONSTRAINT "project_shares_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+ALTER TABLE "project_shares" ADD CONSTRAINT "project_shares_invited_by_users_id_fk" FOREIGN KEY ("invited_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
 
 -- ── Indexes ─────────────────────────────────────────
 
@@ -97,3 +112,6 @@ CREATE INDEX "builds_user_idx" ON "builds" USING btree ("user_id");
 CREATE INDEX "builds_status_idx" ON "builds" USING btree ("status");
 CREATE INDEX "api_keys_user_idx" ON "api_keys" USING btree ("user_id");
 CREATE UNIQUE INDEX "api_keys_hash_idx" ON "api_keys" USING btree ("key_hash");
+CREATE UNIQUE INDEX "shares_project_user_idx" ON "project_shares" USING btree ("project_id", "user_id");
+CREATE INDEX "shares_user_idx" ON "project_shares" USING btree ("user_id");
+CREATE INDEX "shares_project_idx" ON "project_shares" USING btree ("project_id");

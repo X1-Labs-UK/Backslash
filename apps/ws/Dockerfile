@@ -8,8 +8,6 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Copy workspace config and all package.json files
 COPY package.json pnpm-workspace.yaml ./
-COPY apps/web/package.json apps/web/
-COPY apps/worker/package.json apps/worker/
 COPY apps/ws/package.json apps/ws/
 COPY packages/shared/package.json packages/shared/
 
@@ -18,11 +16,10 @@ RUN pnpm install --no-frozen-lockfile
 
 # Copy source
 COPY packages/shared/ packages/shared/
-COPY apps/web/ apps/web/
-COPY templates/ templates/
+COPY apps/ws/ apps/ws/
 
 # Build
-WORKDIR /app/apps/web
+WORKDIR /app/apps/ws
 RUN pnpm run build
 
 # ── Production Stage ─────────────────────────────────
@@ -32,16 +29,20 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Copy built app
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
-COPY --from=builder /app/templates ./templates
-COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
+# Install pnpm for production install
+RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Create data directory
-RUN mkdir -p /data/projects /data/templates
+# Copy workspace config and package files
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/ws/package.json apps/ws/
+COPY packages/shared/package.json packages/shared/
 
-EXPOSE 3000
+# Install production dependencies only
+RUN pnpm install --no-frozen-lockfile --prod
 
-CMD ["node", "apps/web/server.js"]
+# Copy built output
+COPY --from=builder /app/apps/ws/dist ./apps/ws/dist
+
+EXPOSE 3001
+
+CMD ["node", "apps/ws/dist/index.js"]

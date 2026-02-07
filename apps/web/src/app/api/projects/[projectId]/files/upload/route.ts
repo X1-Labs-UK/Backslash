@@ -2,6 +2,8 @@ import { db } from "@/lib/db";
 import { projects, projectFiles } from "@/lib/db/schema";
 import { withAuth } from "@/lib/auth/middleware";
 import { validateFilePath } from "@/lib/utils/validation";
+import { checkProjectAccess } from "@/lib/db/queries/projects";
+import { broadcastFileEvent } from "@/lib/websocket/server";
 import * as storage from "@/lib/storage";
 import { MIME_TYPES, LIMITS } from "@backslash/shared";
 import { eq, and } from "drizzle-orm";
@@ -11,6 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 
 // ─── POST /api/projects/[projectId]/files/upload ────
 // Upload one or more files via FormData (for drag-and-drop from OS).
+// Editors and owners can upload; viewers cannot.
 
 export async function POST(
   request: NextRequest,
@@ -20,18 +23,15 @@ export async function POST(
     try {
       const { projectId } = await params;
 
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, projectId))
-        .limit(1);
-
-      if (!project || project.userId !== user.id) {
+      const access = await checkProjectAccess(user.id, projectId);
+      if (!access.access || access.role === "viewer") {
         return NextResponse.json(
-          { error: "Project not found" },
-          { status: 404 }
+          { error: "Permission denied" },
+          { status: 403 }
         );
       }
+
+      const project = access.project;
 
       const formData = await req.formData();
       const entries = formData.getAll("files") as File[];
@@ -68,7 +68,7 @@ export async function POST(
 
         if (!existingDir) {
           // Create the directory on disk
-          const projectDir = storage.getProjectDir(user.id, projectId);
+          const projectDir = storage.getProjectDir(project.userId, projectId);
           const fullDirPath = path.join(projectDir, dirPath);
           await storage.createDirectory(fullDirPath);
 
@@ -115,7 +115,7 @@ export async function POST(
 
         if (existing) {
           // Overwrite: update the existing file on disk and in DB
-          const projectDir = storage.getProjectDir(user.id, projectId);
+          const projectDir = storage.getProjectDir(project.userId, projectId);
           const fullPath = path.join(projectDir, filePath);
           const buffer = Buffer.from(await file.arrayBuffer());
           await storage.writeFileBinary(fullPath, buffer);
@@ -134,7 +134,7 @@ export async function POST(
         }
 
         // Write to disk
-        const projectDir = storage.getProjectDir(user.id, projectId);
+        const projectDir = storage.getProjectDir(project.userId, projectId);
         const fullPath = path.join(projectDir, filePath);
         const buffer = Buffer.from(await file.arrayBuffer());
         await storage.writeFileBinary(fullPath, buffer);
@@ -158,6 +158,16 @@ export async function POST(
           .returning();
 
         created.push(dbFile);
+
+        // Broadcast file creation to collaborators
+        broadcastFileEvent({
+          type: "file:created",
+          projectId,
+          userId: user.id,
+          fileId,
+          path: filePath,
+          isDirectory: false,
+        });
       }
 
       return NextResponse.json({ files: created }, { status: 201 });

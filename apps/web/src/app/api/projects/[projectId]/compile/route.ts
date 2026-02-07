@@ -2,12 +2,13 @@ import { db } from "@/lib/db";
 import { projects, builds } from "@/lib/db/schema";
 import { withAuth } from "@/lib/auth/middleware";
 import { addCompileJob } from "@/lib/compiler/queue";
+import { checkProjectAccess } from "@/lib/db/queries/projects";
 import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 import { v4 as uuidv4 } from "uuid";
 
 // ─── POST /api/projects/[projectId]/compile ────────
-// Trigger compilation for a project.
+// Trigger compilation for a project. Owner and editors can compile.
 
 export async function POST(
   request: NextRequest,
@@ -17,18 +18,15 @@ export async function POST(
     try {
       const { projectId } = await params;
 
-      const [project] = await db
-        .select()
-        .from(projects)
-        .where(eq(projects.id, projectId))
-        .limit(1);
-
-      if (!project || project.userId !== user.id) {
+      const access = await checkProjectAccess(user.id, projectId);
+      if (!access.access || access.role === "viewer") {
         return NextResponse.json(
-          { error: "Project not found" },
-          { status: 404 }
+          { error: "Permission denied" },
+          { status: 403 }
         );
       }
+
+      const project = access.project;
 
       const buildId = uuidv4();
 

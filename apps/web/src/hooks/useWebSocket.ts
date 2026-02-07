@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useCallback } from "react";
 import { io, Socket } from "socket.io-client";
-import type { BuildStatus, ParsedLogEntry } from "@backslash/shared";
+import type {
+  BuildStatus,
+  ParsedLogEntry,
+  PresenceUser,
+  CursorSelection,
+  ChatMessage,
+  DocChange,
+} from "@backslash/shared";
+
+// ─── Types ─────────────────────────────────────────
 
 interface BuildCompleteData {
   projectId: string;
@@ -21,9 +30,53 @@ interface BuildStatusData {
 }
 
 interface UseWebSocketOptions {
+  // Build events
   onBuildStatus?: (data: BuildStatusData) => void;
   onBuildComplete?: (data: BuildCompleteData) => void;
+  // Presence events
+  onPresenceUsers?: (users: PresenceUser[]) => void;
+  onPresenceJoined?: (user: PresenceUser) => void;
+  onPresenceLeft?: (userId: string) => void;
+  onPresenceUpdated?: (data: { userId: string; activeFileId: string | null; activeFilePath: string | null }) => void;
+  // Cursor events
+  onCursorUpdated?: (data: { userId: string; fileId: string; selection: CursorSelection }) => void;
+  onCursorCleared?: (userId: string) => void;
+  // Document events
+  onDocChanged?: (data: { userId: string; fileId: string; changes: DocChange[]; version: number }) => void;
+  // Chat events
+  onChatMessage?: (message: ChatMessage) => void;
+  onChatHistory?: (messages: ChatMessage[]) => void;
+  // File events
+  onFileCreated?: (data: { userId: string; file: { id: string; path: string; isDirectory: boolean } }) => void;
+  onFileDeleted?: (data: { userId: string; fileId: string; path: string }) => void;
+  onFileSaved?: (data: { userId: string; fileId: string; path: string }) => void;
 }
+
+// ─── WebSocket URL Resolution ──────────────────────
+
+/**
+ * Resolves the WebSocket server URL.
+ *
+ * Priority:
+ * 1. NEXT_PUBLIC_WS_URL env var (for custom deployments)
+ * 2. Same hostname, port 3001 (default Docker setup)
+ */
+function getWsUrl(): string {
+  // Explicit override via env
+  if (process.env.NEXT_PUBLIC_WS_URL) {
+    return process.env.NEXT_PUBLIC_WS_URL;
+  }
+
+  // Default: same host, port 3001
+  if (typeof window !== "undefined") {
+    const protocol = window.location.protocol === "https:" ? "https" : "http";
+    return `${protocol}://${window.location.hostname}:3001`;
+  }
+
+  return "http://localhost:3001";
+}
+
+// ─── Hook ──────────────────────────────────────────
 
 export function useWebSocket(
   projectId: string | null,
@@ -40,12 +93,47 @@ export function useWebSocket(
     }
   }, []);
 
+  // ── Emit helpers ──────────────────────────────
+
+  const sendActiveFile = useCallback(
+    (fileId: string | null, filePath: string | null) => {
+      socketRef.current?.emit("presence:activeFile", { fileId, filePath });
+    },
+    []
+  );
+
+  const sendCursorMove = useCallback(
+    (fileId: string, selection: CursorSelection) => {
+      socketRef.current?.emit("cursor:move", { fileId, selection });
+    },
+    []
+  );
+
+  const sendDocChange = useCallback(
+    (fileId: string, changes: DocChange[], version: number) => {
+      socketRef.current?.emit("doc:change", { fileId, changes, version });
+    },
+    []
+  );
+
+  const sendChatMessage = useCallback((text: string) => {
+    socketRef.current?.emit("chat:send", { text });
+  }, []);
+
+  const leaveProject = useCallback((projId: string) => {
+    socketRef.current?.emit("leave:project", { projectId: projId });
+  }, []);
+
+  // ── Socket lifecycle ──────────────────────────
+
   useEffect(() => {
     if (!projectId) return;
 
-    const socket = io({
-      path: "/api/ws",
-      query: { projectId },
+    const wsUrl = getWsUrl();
+
+    const socket = io(wsUrl, {
+      path: "/socket.io",
+      withCredentials: true,
       transports: ["websocket", "polling"],
       reconnection: true,
       reconnectionAttempts: 10,
@@ -53,15 +141,92 @@ export function useWebSocket(
     });
 
     socket.on("connect", () => {
+      console.log("[WS] Connected to WebSocket server");
       socket.emit("join:project", { projectId });
     });
 
+    // Build events
     socket.on("build:status", (data: BuildStatusData) => {
       optionsRef.current.onBuildStatus?.(data);
     });
 
     socket.on("build:complete", (data: BuildCompleteData) => {
       optionsRef.current.onBuildComplete?.(data);
+    });
+
+    // Presence events
+    socket.on("presence:users", (data: { users: PresenceUser[] }) => {
+      optionsRef.current.onPresenceUsers?.(data.users);
+    });
+
+    socket.on("presence:joined", (data: { user: PresenceUser }) => {
+      optionsRef.current.onPresenceJoined?.(data.user);
+    });
+
+    socket.on("presence:left", (data: { userId: string }) => {
+      optionsRef.current.onPresenceLeft?.(data.userId);
+    });
+
+    socket.on(
+      "presence:updated",
+      (data: { userId: string; activeFileId: string | null; activeFilePath: string | null }) => {
+        optionsRef.current.onPresenceUpdated?.(data);
+      }
+    );
+
+    // Cursor events
+    socket.on(
+      "cursor:updated",
+      (data: { userId: string; fileId: string; selection: CursorSelection }) => {
+        optionsRef.current.onCursorUpdated?.(data);
+      }
+    );
+
+    socket.on("cursor:cleared", (data: { userId: string }) => {
+      optionsRef.current.onCursorCleared?.(data.userId);
+    });
+
+    // Document change events
+    socket.on(
+      "doc:changed",
+      (data: { userId: string; fileId: string; changes: DocChange[]; version: number }) => {
+        optionsRef.current.onDocChanged?.(data);
+      }
+    );
+
+    // Chat events
+    socket.on("chat:message", (data: ChatMessage) => {
+      optionsRef.current.onChatMessage?.(data);
+    });
+
+    socket.on("chat:history", (data: { messages: ChatMessage[] }) => {
+      optionsRef.current.onChatHistory?.(data.messages);
+    });
+
+    // File events
+    socket.on(
+      "file:created",
+      (data: { userId: string; file: { id: string; path: string; isDirectory: boolean } }) => {
+        optionsRef.current.onFileCreated?.(data);
+      }
+    );
+
+    socket.on(
+      "file:deleted",
+      (data: { userId: string; fileId: string; path: string }) => {
+        optionsRef.current.onFileDeleted?.(data);
+      }
+    );
+
+    socket.on(
+      "file:saved",
+      (data: { userId: string; fileId: string; path: string }) => {
+        optionsRef.current.onFileSaved?.(data);
+      }
+    );
+
+    socket.on("connect_error", (err) => {
+      console.warn("[WS] Connection error:", err.message);
     });
 
     socketRef.current = socket;
@@ -71,5 +236,13 @@ export function useWebSocket(
     };
   }, [projectId]);
 
-  return { socket: socketRef, disconnect };
+  return {
+    socket: socketRef,
+    disconnect,
+    sendActiveFile,
+    sendCursorMove,
+    sendDocChange,
+    sendChatMessage,
+    leaveProject,
+  };
 }
