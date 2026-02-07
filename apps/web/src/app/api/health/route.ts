@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getRedisConnection, getCompileQueue } from "@/lib/compiler/queue";
+import IORedis from "ioredis";
+import { getCompileQueue } from "@/lib/compiler/queue";
 import { getDockerClient, healthCheck as dockerHealthCheck } from "@/lib/compiler/docker";
 
 // ─── GET /api/health ────────────────────────────────
@@ -11,9 +12,16 @@ export async function GET() {
 
   // 1. Redis
   try {
-    const redis = getRedisConnection();
+    const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+    const redis = new IORedis(redisUrl, {
+      maxRetriesPerRequest: 3,
+      connectTimeout: 5000,
+      lazyConnect: true,
+    });
+    await redis.connect();
     const pong = await redis.ping();
     checks.redis = { ok: pong === "PONG", detail: pong };
+    await redis.quit();
   } catch (err) {
     checks.redis = {
       ok: false,

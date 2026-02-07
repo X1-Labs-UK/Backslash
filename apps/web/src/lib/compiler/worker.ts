@@ -6,7 +6,7 @@ import IORedis from "ioredis";
 import { db } from "@/lib/db";
 import { builds } from "@/lib/db/schema";
 import { getProjectDir, getPdfPath, fileExists } from "@/lib/storage";
-import { type CompileJobData, type CompileJobResult } from "./queue";
+import { type CompileJobData, type CompileJobResult, getRedisOptions } from "./queue";
 import { runCompileContainer } from "./docker";
 import { parseLatexLog } from "./logParser";
 import { broadcastBuildUpdate } from "@/lib/websocket/server";
@@ -29,13 +29,11 @@ const COMPILE_TIMEOUT_S = parseInt(
 const LOCK_DURATION_MS = (COMPILE_TIMEOUT_S + 60) * 1000;
 
 // ─── Global Singleton ──────────────────────────────
-// Use globalThis to survive Next.js hot module reloads in dev
-// and ensure only one worker instance exists per process.
 
 interface WorkerState {
   worker: Worker<CompileJobData, CompileJobResult>;
-  connection: IORedis;
   watchdog: ReturnType<typeof setInterval>;
+  monitorConn: IORedis;
 }
 
 const WORKER_KEY = "__backslash_compile_worker__" as const;
@@ -48,52 +46,8 @@ function setWorkerState(state: WorkerState | null): void {
   ((globalThis as unknown) as Record<string, WorkerState | null>)[WORKER_KEY] = state;
 }
 
-// ─── Redis Connection Factory ──────────────────────
-
-function createWorkerConnection(): IORedis {
-  const conn = new IORedis(REDIS_URL, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-    // TCP keepAlive prevents silent connection death from Docker
-    // networking, load balancers, or Redis server idle timeouts.
-    // This is the ROOT FIX for "worker stops after first job".
-    keepAlive: 10_000,
-    retryStrategy(times: number) {
-      const delay = Math.min(times * 200, 5000);
-      console.log(`[Worker Redis] Reconnecting (attempt ${times}, delay ${delay}ms)`);
-      return delay;
-    },
-    reconnectOnError(err: Error) {
-      console.error(`[Worker Redis] reconnectOnError: ${err.message}`);
-      return true;
-    },
-  });
-
-  conn.on("error", (err) => {
-    console.error("[Worker Redis] Connection error:", err.message);
-  });
-
-  conn.on("connect", () => {
-    console.log("[Worker Redis] Connected");
-  });
-
-  conn.on("close", () => {
-    console.warn("[Worker Redis] Connection closed");
-  });
-
-  conn.on("reconnecting", () => {
-    console.log("[Worker Redis] Reconnecting...");
-  });
-
-  return conn;
-}
-
 // ─── Stale Build Cleanup ───────────────────────────
 
-/**
- * On startup, mark any "queued" or "compiling" builds as "error".
- * These are orphaned from a previous app instance that crashed/redeployed.
- */
 async function cleanStaleBuildRecords(): Promise<void> {
   try {
     const stale = await db
@@ -118,26 +72,29 @@ async function cleanStaleBuildRecords(): Promise<void> {
 
 /**
  * Creates and starts the BullMQ worker that processes compile jobs.
- * Uses globalThis to ensure exactly one worker per process.
- * Includes a watchdog that monitors the worker's health.
+ *
+ * CRITICAL: Connection options (plain object) are passed to BullMQ
+ * instead of a pre-created ioredis instance. This lets BullMQ create
+ * and manage its own connections internally, avoiding the
+ * connection.duplicate() bug that kills the blocking connection
+ * in Docker/cloud environments after the first job.
  */
 export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
-  // Return existing worker if alive
   const existing = getWorkerState();
   if (existing) {
     if (!existing.worker.closing) {
       return existing.worker;
     }
-    // Worker is closing — clean up and recreate
     clearInterval(existing.watchdog);
+    try { existing.monitorConn.disconnect(); } catch { /* ignore */ }
     setWorkerState(null);
   }
 
-  // Clean stale builds from DB (fire-and-forget, don't block startup)
+  // Clean stale builds from DB (fire-and-forget)
   cleanStaleBuildRecords();
 
-  const connection = createWorkerConnection();
-
+  // Pass connection OPTIONS, not an ioredis instance.
+  // BullMQ will create its own connections from these options.
   const worker = new Worker<CompileJobData, CompileJobResult>(
     QUEUE_NAME,
     async (job: Job<CompileJobData, CompileJobResult>) => {
@@ -145,16 +102,16 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
       return processCompileJob(job);
     },
     {
-      connection,
+      connection: getRedisOptions(),
       concurrency: MAX_CONCURRENT_BUILDS,
       lockDuration: LOCK_DURATION_MS,
-      // Check for stalled jobs every 30s (BullMQ default: lockDuration/2 = 90s — too slow)
       stalledInterval: 30_000,
       maxStalledCount: 2,
-      // Reduce drain delay for faster job pickup after completion
       drainDelay: 5,
     }
   );
+
+  // ── Event Handlers ──────────────────────────────
 
   worker.on("ready", () => {
     console.log("[Worker] Connected to Redis and ready to process jobs");
@@ -165,7 +122,10 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
   });
 
   worker.on("completed", (job) => {
-    console.log(`[Worker] Job ${job.id} completed (project ${job.data.projectId})`);
+    console.log(
+      `[Worker] Job ${job.id} completed (project ${job.data.projectId}), ` +
+      `workerRunning=${worker.isRunning()}`
+    );
   });
 
   worker.on("failed", (job, err) => {
@@ -181,31 +141,59 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
   });
 
   // ── Watchdog ────────────────────────────────────
-  // Monitors the worker's Redis connection health every 30s.
-  // If the connection is dead, force-recreate the worker.
-  const watchdog = setInterval(async () => {
-    const connStatus = connection.status;
-    const isHealthy = connStatus === "ready" || connStatus === "connecting";
+  // Uses a SEPARATE ioredis connection to monitor the queue directly.
+  // If jobs sit in the wait list for >60s with no active processing,
+  // the worker's blocking connection is assumed dead and we recreate.
 
-    if (!isHealthy || worker.closing) {
-      console.error(
-        `[Worker Watchdog] Unhealthy! connStatus=${connStatus} closing=${worker.closing} — recreating worker`
-      );
-      clearInterval(watchdog);
-      setWorkerState(null);
-      try {
-        await worker.close();
-      } catch {
-        // Ignore close errors on dead worker
+  const monitorConn = new IORedis(REDIS_URL, {
+    maxRetriesPerRequest: 3,
+    enableReadyCheck: false,
+    lazyConnect: false,
+  });
+  monitorConn.on("error", () => { /* suppress unhandled errors */ });
+
+  let stuckTicks = 0;
+
+  const watchdog = setInterval(async () => {
+    try {
+      if (worker.closing) {
+        console.warn("[Watchdog] Worker is closing — recreating");
+        clearInterval(watchdog);
+        setWorkerState(null);
+        try { monitorConn.disconnect(); } catch { /* ignore */ }
+        setTimeout(() => startCompileWorker(), 2000);
+        return;
       }
-      try {
-        connection.disconnect();
-      } catch {
-        // Ignore disconnect errors
+
+      // Check queue state via Redis directly
+      const waitingCount = await monitorConn.llen(`bull:${QUEUE_NAME}:wait`);
+      const activeCount = await monitorConn.llen(`bull:${QUEUE_NAME}:active`);
+
+      if (waitingCount > 0 && activeCount === 0) {
+        stuckTicks++;
+        console.warn(
+          `[Watchdog] ${waitingCount} waiting, ${activeCount} active, ` +
+          `workerRunning=${worker.isRunning()} — stuck tick ${stuckTicks}/2`
+        );
+
+        if (stuckTicks >= 2) {
+          // Jobs have been waiting for 60+ seconds with no processing
+          console.error("[Watchdog] Jobs stuck in queue for >60s — force-recreating worker");
+          clearInterval(watchdog);
+          setWorkerState(null);
+          try { await worker.close(); } catch { /* ignore */ }
+          try { monitorConn.disconnect(); } catch { /* ignore */ }
+          setTimeout(() => startCompileWorker(), 2000);
+          return;
+        }
+      } else {
+        if (stuckTicks > 0) {
+          console.log(`[Watchdog] Queue healthy: ${waitingCount} waiting, ${activeCount} active`);
+        }
+        stuckTicks = 0;
       }
-      // Recreate after a short delay
-      setTimeout(() => startCompileWorker(), 2000);
-      return;
+    } catch {
+      // Ignore monitoring errors — don't crash the watchdog
     }
   }, 30_000);
 
@@ -215,10 +203,11 @@ export function startCompileWorker(): Worker<CompileJobData, CompileJobResult> {
     console.error("[Worker] Failed to initialize:", err.message);
   });
 
-  setWorkerState({ worker, connection, watchdog });
+  setWorkerState({ worker, watchdog, monitorConn });
 
   console.log(
-    `[Worker] Compile worker started (concurrency=${MAX_CONCURRENT_BUILDS}, lockDuration=${LOCK_DURATION_MS}ms)`
+    `[Worker] Compile worker started (concurrency=${MAX_CONCURRENT_BUILDS}, ` +
+    `lockDuration=${LOCK_DURATION_MS}ms, connectionMode=options)`
   );
 
   return worker;
@@ -382,7 +371,7 @@ export async function shutdownWorker(): Promise<void> {
     console.log("[Worker] Shutting down compile worker...");
     clearInterval(state.watchdog);
     await state.worker.close();
-    state.connection.disconnect();
+    try { state.monitorConn.disconnect(); } catch { /* ignore */ }
     setWorkerState(null);
     console.log("[Worker] Compile worker stopped");
   }
