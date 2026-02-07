@@ -31,6 +31,23 @@ services:
       - backslash
     restart: unless-stopped
 
+  # ── Database Migrations ─────────────────────────────
+  # Runs pending Drizzle migrations using the same production image,
+  # then exits. The app service waits for this to complete.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    command: ["node", "apps/web/scripts/migrate.mjs"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql://backslash:backslash@postgres:5432/backslash}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backslash
+    restart: "no"
+
   # ── Web Application ────────────────────────────────
   app:
     build:
@@ -57,6 +74,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       compiler-image:
+        condition: service_completed_successfully
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
