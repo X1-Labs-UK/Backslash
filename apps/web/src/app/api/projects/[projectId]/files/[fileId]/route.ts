@@ -57,6 +57,25 @@ export async function GET(
       const projectDir = storage.getProjectDir(project.userId, projectId);
       const fullPath = path.join(projectDir, file.path);
 
+      // Serve raw binary file (e.g. images) when ?raw is present
+      const isRaw = request.nextUrl.searchParams.has("raw");
+      if (isRaw && !file.isDirectory && file.mimeType?.startsWith("image/")) {
+        try {
+          const buffer = await storage.readFileBinary(fullPath);
+          return new NextResponse(new Uint8Array(buffer), {
+            headers: {
+              "Content-Type": file.mimeType,
+              "Cache-Control": "private, max-age=3600",
+            },
+          });
+        } catch {
+          return NextResponse.json(
+            { error: "File not found on disk" },
+            { status: 404 }
+          );
+        }
+      }
+
       let content = "";
       if (!file.isDirectory) {
         try {

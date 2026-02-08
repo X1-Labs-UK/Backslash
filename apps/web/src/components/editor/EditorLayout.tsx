@@ -671,6 +671,15 @@ export function EditorLayout({
     }
   }, [project.id]);
 
+  const isImageFile = useCallback(
+    (fileId: string | null): boolean => {
+      if (!fileId) return false;
+      const file = files.find((f) => f.id === fileId);
+      return file?.mimeType?.startsWith("image/") ?? false;
+    },
+    [files]
+  );
+
   const handlePdfTextSelect = useCallback((text: string) => {
     codeEditorRef.current?.highlightText(text);
   }, []);
@@ -760,20 +769,30 @@ export function EditorLayout({
                   />
                   <div className="flex-1 min-h-0">
                     {activeFileId ? (
-                      <CodeEditor
-                        ref={codeEditorRef}
-                        content={activeFileContent}
-                        onChange={handleEditorChange}
-                        language="latex"
-                        onDocChange={(changes) => {
-                          if (activeFileId) sendDocChange(activeFileId, changes, Date.now());
-                        }}
-                        onCursorChange={(selection) => {
-                          if (activeFileId) sendCursorMove(activeFileId, selection);
-                        }}
-                        remoteChanges={remoteChanges}
-                        remoteCursors={remoteCursors}
-                      />
+                      isImageFile(activeFileId) ? (
+                        <div className="flex h-full items-center justify-center bg-bg-primary p-4 overflow-auto">
+                          <img
+                            src={`/api/projects/${project.id}/files/${activeFileId}?raw`}
+                            alt={openFiles.find((f) => f.id === activeFileId)?.path ?? "Image"}
+                            className="max-w-full max-h-full object-contain"
+                          />
+                        </div>
+                      ) : (
+                        <CodeEditor
+                          ref={codeEditorRef}
+                          content={activeFileContent}
+                          onChange={handleEditorChange}
+                          language="latex"
+                          onDocChange={(changes) => {
+                            if (activeFileId) sendDocChange(activeFileId, changes, Date.now());
+                          }}
+                          onCursorChange={(selection) => {
+                            if (activeFileId) sendCursorMove(activeFileId, selection);
+                          }}
+                          remoteChanges={remoteChanges}
+                          remoteCursors={remoteCursors}
+                        />
+                      )
                     ) : (
                       <div className="flex h-full items-center justify-center animate-fade-in">
                         <div className="flex flex-col items-center gap-3 text-center px-4">

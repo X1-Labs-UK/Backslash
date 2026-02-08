@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useEffect, useImperativeHandle, forwardRef } from "react";
-import { useTheme } from "@/components/ThemeProvider";
 import type { DocChange, CursorSelection } from "@backslash/shared";
 
 // ─── Types ──────────────────────────────────────────
@@ -49,8 +48,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     const onDocChangeRef = useRef(onDocChange);
     const onCursorChangeRef = useRef(onCursorChange);
     const isExternalUpdate = useRef(false);
-    const { theme } = useTheme();
-
     // Keep callback refs current
     useEffect(() => {
       onChangeRef.current = onChange;
@@ -154,8 +151,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         const { RangeSetBuilder } = await import("@codemirror/state");
 
         if (!containerRef.current) return;
-
-        const isDark = theme === "dark";
 
         // ─── Remote cursor infrastructure ───────────────
         type CursorMap = Map<string, RemoteCursorData>;
@@ -319,86 +314,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           }
         );
 
-        // ─── Editor theme ───────────────────────────────
-        const editorTheme = EditorView.theme(
-          {
-            "&": {
-              backgroundColor: "var(--color-editor-bg)",
-              color: "var(--color-text-primary)",
-              height: "100%",
-            },
-            ".cm-content": {
-              fontFamily: "var(--font-mono)",
-              fontSize: "14px",
-              caretColor: "var(--color-accent)",
-              padding: "8px 0",
-            },
-            ".cm-cursor, .cm-dropCursor": {
-              borderLeftColor: "var(--color-accent)",
-            },
-            "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-              backgroundColor: "var(--color-editor-selection)",
-            },
-            ".cm-activeLine": {
-              backgroundColor: "var(--color-editor-line-hl)",
-            },
-            ".cm-gutters": {
-              backgroundColor: "var(--color-editor-gutter)",
-              color: "var(--color-text-muted)",
-              borderRight: "1px solid var(--color-border)",
-            },
-            ".cm-activeLineGutter": {
-              backgroundColor: "var(--color-editor-line-hl)",
-              color: "var(--color-text-secondary)",
-            },
-            ".cm-foldPlaceholder": {
-              backgroundColor: "var(--color-bg-elevated)",
-              color: "var(--color-text-muted)",
-              border: "1px solid var(--color-border)",
-            },
-            ".cm-tooltip": {
-              backgroundColor: "var(--color-bg-secondary)",
-              border: "1px solid var(--color-border)",
-              color: "var(--color-text-primary)",
-            },
-            ".cm-tooltip-autocomplete": {
-              backgroundColor: "var(--color-bg-secondary)",
-            },
-            ".cm-searchMatch": {
-              backgroundColor: "var(--color-accent)",
-              opacity: "0.3",
-            },
-            ".cm-searchMatch.cm-searchMatch-selected": {
-              backgroundColor: "var(--color-accent)",
-              opacity: "0.5",
-            },
-            ".cm-panels": {
-              backgroundColor: "var(--color-bg-secondary)",
-              color: "var(--color-text-primary)",
-            },
-            ".cm-panels.cm-panels-top": {
-              borderBottom: "1px solid var(--color-border)",
-            },
-            ".cm-panels.cm-panels-bottom": {
-              borderTop: "1px solid var(--color-border)",
-            },
-            ".cm-panel.cm-search": {
-              backgroundColor: "var(--color-bg-secondary)",
-            },
-            ".cm-panel.cm-search input": {
-              backgroundColor: "var(--color-bg-tertiary)",
-              color: "var(--color-text-primary)",
-              border: "1px solid var(--color-border)",
-            },
-            ".cm-panel.cm-search button": {
-              backgroundColor: "var(--color-bg-elevated)",
-              color: "var(--color-text-secondary)",
-              border: "1px solid var(--color-border)",
-            },
-          },
-          { dark: isDark }
-        );
-
         const state = EditorState.create({
           doc: content,
           extensions: [
@@ -414,7 +329,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             StreamLanguage.define(stex),
             syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
             EditorView.lineWrapping,
-            editorTheme,
             keymap.of([
               ...defaultKeymap,
               ...searchKeymap,
@@ -475,9 +389,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           viewRef.current = null;
         }
       };
-      // Re-init when theme changes to swap dark/light mode
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [theme]);
+    }, []);
 
     // Update content from outside without losing cursor position
     useEffect(() => {
