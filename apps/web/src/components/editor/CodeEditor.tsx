@@ -24,6 +24,7 @@ interface CodeEditorProps {
 
 export interface CodeEditorHandle {
   highlightText: (text: string) => void;
+  scrollToLine: (line: number) => void;
 }
 
 // ─── CodeEditor ─────────────────────────────────────
@@ -61,7 +62,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       onCursorChangeRef.current = onCursorChange;
     }, [onCursorChange]);
 
-    // Expose highlightText to parent
+    // Expose highlightText and scrollToLine to parent
     useImperativeHandle(
       ref,
       () => ({
@@ -103,9 +104,23 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           });
           view.focus();
         },
+        scrollToLine: (line: number) => {
+          const view = viewRef.current;
+          const EV = editorViewClassRef.current;
+          if (!view || !EV) return;
+          const clampedLine = Math.min(Math.max(line, 1), view.state.doc.lines);
+          const lineInfo = view.state.doc.line(clampedLine);
+          view.dispatch({
+            effects: EV.scrollIntoView(lineInfo.from, { y: "center" }),
+          });
+        },
       }),
       []
     );
+
+    // Store EditorView class for scrollIntoView
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const editorViewClassRef = useRef<any>(null);
 
     // ─── Remote cursor state & effects (CodeMirror StateField + StateEffect) ───
 
@@ -151,6 +166,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         const { RangeSetBuilder } = await import("@codemirror/state");
 
         if (!containerRef.current) return;
+
+        editorViewClassRef.current = EditorView;
 
         // ─── Remote cursor infrastructure ───────────────
         type CursorMap = Map<string, RemoteCursorData>;

@@ -146,6 +146,12 @@ export function EditorLayout({
     Map<string, { color: string; name: string; selection: CursorSelection }>
   >(new Map());
 
+  // ─── Follow Mode State ──────────────────────────
+
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  const followingUserIdRef = useRef<string | null>(null);
+  followingUserIdRef.current = followingUserId;
+
   // User color map for chat
   const userColorMap = new Map<string, string>();
   presenceUsers.forEach((u) => userColorMap.set(u.userId, u.color));
@@ -386,6 +392,10 @@ export function EditorLayout({
         next.delete(userId);
         return next;
       });
+      // Break follow mode if followed user disconnects
+      if (followingUserIdRef.current === userId) {
+        setFollowingUserId(null);
+      }
     },
     onPresenceUpdated: (data) => {
       setPresenceUsers((prev) =>
@@ -395,6 +405,13 @@ export function EditorLayout({
             : u
         )
       );
+      // Follow mode: switch file if followed user changes file
+      if (followingUserIdRef.current === data.userId && data.activeFileId) {
+        const file = files.find((f) => f.id === data.activeFileId);
+        if (file && data.activeFileId !== activeFileIdRef.current) {
+          handleFileSelect(file.id, file.path);
+        }
+      }
     },
     // Chat events
     onChatMessage: (message) => {
@@ -440,6 +457,10 @@ export function EditorLayout({
           });
           return next;
         });
+      }
+      // Follow mode: scroll to followed user's cursor
+      if (followingUserIdRef.current === data.userId && data.fileId === activeFileIdRef.current) {
+        codeEditorRef.current?.scrollToLine(data.selection.head.line);
       }
     },
     onCursorCleared: (userId) => {
@@ -551,6 +572,11 @@ export function EditorLayout({
 
   const handleEditorChange = useCallback(
     (content: string) => {
+      // Break follow mode on local edit
+      if (followingUserIdRef.current) {
+        setFollowingUserId(null);
+      }
+
       setActiveFileContent(content);
 
       if (activeFileId) {
@@ -696,6 +722,34 @@ export function EditorLayout({
     [files, handleFileSelect]
   );
 
+  // ─── Follow Mode ─────────────────────────────────
+
+  const handleFollowUser = useCallback(
+    (userId: string) => {
+      if (followingUserId === userId) {
+        setFollowingUserId(null);
+        return;
+      }
+      setFollowingUserId(userId);
+
+      // Jump to the user's current file
+      const user = presenceUsers.find((u) => u.userId === userId);
+      if (user?.activeFileId && user.activeFileId !== activeFileId) {
+        const file = files.find((f) => f.id === user.activeFileId);
+        if (file) {
+          handleFileSelect(file.id, file.path);
+        }
+      }
+
+      // Scroll to their cursor if we already have it
+      const cursor = remoteCursors.get(userId);
+      if (cursor) {
+        codeEditorRef.current?.scrollToLine(cursor.selection.head.line);
+      }
+    },
+    [followingUserId, presenceUsers, activeFileId, files, handleFileSelect, remoteCursors]
+  );
+
   // Auto-open main tex file on mount
   useEffect(() => {
     if (project.mainFile && files.length > 0 && openFiles.length === 0) {
@@ -730,6 +784,8 @@ export function EditorLayout({
         presenceUsers={presenceUsers}
         currentUserId={currentUser.id}
         role={role}
+        followingUserId={followingUserId}
+        onFollowUser={handleFollowUser}
       />
 
       {/* Main content area */}
