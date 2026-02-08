@@ -7,6 +7,7 @@ services:
       context: .
       dockerfile: docker/texlive/Dockerfile
     image: backslash-compiler
+    pull_policy: build
     entrypoint: ["true"]
     restart: "no"
 
