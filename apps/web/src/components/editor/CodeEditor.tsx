@@ -27,6 +27,7 @@ interface CodeEditorProps {
   content: string;
   onChange: (value: string) => void;
   language?: string;
+  readOnly?: boolean;
   errors?: BuildError[];
   // Collaboration
   onDocChange?: (changes: DocChange[]) => void;
@@ -52,6 +53,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       content,
       onChange,
       language = "latex",
+      readOnly = false,
       errors,
       onDocChange,
       onCursorChange,
@@ -496,7 +498,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         });
         errorFieldRef.current = errorField;
 
-        // ─── Clickable URL links ───────────────────────────
+        // ─── Clickable URL links (Ctrl/Cmd + click) ─────────
         const urlRe = /https?:\/\/[^\s)}\]>"'`]+/g;
         const urlDeco = Decoration.mark({
           class: "cm-url-link",
@@ -523,9 +525,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
             eventHandlers: {
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
               click(event: MouseEvent, view: any) {
+                // Require Ctrl (Windows/Linux) or Cmd (Mac)
+                if (!(event.ctrlKey || event.metaKey)) return false;
                 if (event.button !== 0) return false;
-                const selectedText = window.getSelection()?.toString().trim() ?? "";
-                if (selectedText.length > 0) return false;
                 const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
                 if (pos === null) return false;
                 const line = view.state.doc.lineAt(pos);
@@ -547,9 +549,15 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           }
         );
 
+        // Read-only mode: disable editing but keep navigation/search
+        const readOnlyExtensions = readOnly
+          ? [EditorView.editable.of(false), EditorState.readOnly.of(true)]
+          : [];
+
         const state = EditorState.create({
           doc: contentRef.current,
           extensions: [
+            ...readOnlyExtensions,
             lineNumbers(),
             highlightActiveLine(),
             highlightSpecialChars(),

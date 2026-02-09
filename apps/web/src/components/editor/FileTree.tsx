@@ -43,6 +43,7 @@ interface FileTreeProps {
   onFileSelect: (fileId: string, filePath: string) => void;
   onFilesChanged: () => void;
   shareToken?: string | null;
+  readOnly?: boolean;
 }
 
 // ─── Build tree structure from flat file list ───────
@@ -431,6 +432,7 @@ export function FileTree({
   onFileSelect,
   onFilesChanged,
   shareToken = null,
+  readOnly = false,
 }: FileTreeProps) {
   const [creating, setCreating] = useState<"file" | "folder" | null>(null);
   const [newName, setNewName] = useState("");
@@ -715,30 +717,32 @@ export function FileTree({
         <span className="text-xs font-semibold uppercase tracking-wider text-text-muted">
           Files
         </span>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => {
-              setCreating("file");
-              setNewName("");
-            }}
-            title="New File"
-            className="rounded p-1 text-text-muted transition-colors hover:text-text-primary hover:bg-bg-elevated"
-          >
-            <FilePlus className="h-4 w-4" />
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setCreating("folder");
-              setNewName("");
-            }}
-            title="New Folder"
-            className="rounded p-1 text-text-muted transition-colors hover:text-text-primary hover:bg-bg-elevated"
-          >
-            <FolderPlus className="h-4 w-4" />
-          </button>
-        </div>
+        {!readOnly && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setCreating("file");
+                setNewName("");
+              }}
+              title="New File"
+              className="rounded p-1 text-text-muted transition-colors hover:text-text-primary hover:bg-bg-elevated"
+            >
+              <FilePlus className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setCreating("folder");
+                setNewName("");
+              }}
+              title="New Folder"
+              className="rounded p-1 text-text-muted transition-colors hover:text-text-primary hover:bg-bg-elevated"
+            >
+              <FolderPlus className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* New file/folder input */}
@@ -824,8 +828,8 @@ export function FileTree({
         ))}
       </div>
 
-      {/* Context menu */}
-      {contextMenu && (
+      {/* Context menu (hidden for viewers) */}
+      {!readOnly && contextMenu && (
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}

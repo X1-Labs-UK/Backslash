@@ -114,6 +114,9 @@ export function EditorLayout({
   isPublicShare = false,
   onIdentityResolved,
 }: EditorLayoutProps) {
+  // Viewers can only see live changes and PDF — no editing, no builds
+  const canEdit = role === "owner" || role === "editor";
+
   const [currentUser, setCurrentUser] = useState<CurrentUser>(initialCurrentUser);
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
@@ -770,6 +773,7 @@ export function EditorLayout({
 
   const handleSave = useCallback(
     async (content: string, shouldCompile: boolean) => {
+      if (!canEdit) return;
       if (!activeFileId) return;
 
       // Decide whether to actually trigger a compile
@@ -810,6 +814,8 @@ export function EditorLayout({
 
   const handleEditorChange = useCallback(
     (content: string) => {
+      if (!canEdit) return;
+
       // Break follow mode on local edit
       if (followingUserIdRef.current) {
         setFollowingUserId(null);
@@ -857,6 +863,7 @@ export function EditorLayout({
   }, [activeFileId, activeFileContent, handleSave]);
 
   const handleCompile = useCallback(async () => {
+    if (!canEdit) return;
     if (compilingRef.current) return;
 
     saveViewPositionsBeforeBuild();
@@ -1098,6 +1105,7 @@ export function EditorLayout({
         onShareUpdated={refreshShareState}
         shareToken={shareToken}
         canManageShare={!isPublicShare && role === "owner"}
+        canEdit={canEdit}
       />
 
       {/* Main content area */}
@@ -1123,6 +1131,7 @@ export function EditorLayout({
                   onFileSelect={handleFileSelect}
                   onFilesChanged={refreshFiles}
                   shareToken={shareToken}
+                  readOnly={!canEdit}
                 />
               </Panel>
 
@@ -1162,6 +1171,7 @@ export function EditorLayout({
                           content={activeFileContent}
                           onChange={handleEditorChange}
                           language="latex"
+                          readOnly={!canEdit}
                           errors={activeFileErrors}
                           onDocChange={(changes) => {
                             if (activeFileId) sendDocChange(activeFileId, changes, Date.now());

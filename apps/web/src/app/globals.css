@@ -310,17 +310,17 @@ body {
   background-color: rgba(210, 15, 57, 0.08);
 }
 
-/* Clickable URL links in editor */
+/* Clickable URL links in editor (Ctrl/Cmd + click to open) */
 .cm-url-link {
   color: var(--color-accent);
   text-decoration: underline;
-  text-decoration-style: solid;
+  text-decoration-style: dotted;
   text-underline-offset: 2px;
-  cursor: pointer;
 }
 
 .cm-url-link:hover {
   color: var(--color-accent-hover);
+  text-decoration-style: solid;
 }
 
 /* Ensure editor fills container properly */
