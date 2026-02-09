@@ -99,6 +99,7 @@ interface EditorLayoutProps {
   currentUser?: CurrentUser;
   shareToken?: string | null;
   isPublicShare?: boolean;
+  onIdentityResolved?: (user: CurrentUser) => void;
 }
 
 // ─── Editor Layout ──────────────────────────────────
@@ -108,14 +109,26 @@ export function EditorLayout({
   files: initialFiles,
   lastBuild: initialBuild,
   role = "owner",
-  currentUser = { id: "", email: "", name: "" },
+  currentUser: initialCurrentUser = { id: "", email: "", name: "" },
   shareToken = null,
   isPublicShare = false,
+  onIdentityResolved,
 }: EditorLayoutProps) {
+  const [currentUser, setCurrentUser] = useState<CurrentUser>(initialCurrentUser);
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [openFiles, setOpenFiles] = useState<OpenFile[]>([]);
   const [activeFileId, setActiveFileId] = useState<string | null>(null);
   const [activeFileContent, setActiveFileContent] = useState<string>("");
+  // Normalize stale in-progress build statuses: if DB says queued/compiling,
+  // the build may have finished or crashed while nobody was watching.
+  const initialBuildStatus = (() => {
+    const s = initialBuild?.status;
+    if (s === "queued" || s === "compiling") return "idle";
+    return s ?? "idle";
+  })();
+  const initialBuildMaybeRunning =
+    initialBuild?.status === "queued" || initialBuild?.status === "compiling";
+
   const [compiling, setCompiling] = useState(false);
   const [pdfUrl, setPdfUrl] = useState<string | null>(
     initialBuild?.status === "success"
@@ -126,9 +139,7 @@ export function EditorLayout({
         : `/api/projects/${project.id}/pdf?t=${Date.now()}`
       : null
   );
-  const [buildStatus, setBuildStatus] = useState(
-    initialBuild?.status ?? "idle"
-  );
+  const [buildStatus, setBuildStatus] = useState(initialBuildStatus);
   const [buildLogs, setBuildLogs] = useState(initialBuild?.logs ?? "");
   const [buildDuration, setBuildDuration] = useState<number | null>(
     initialBuild?.durationMs ?? null
@@ -478,6 +489,52 @@ export function EditorLayout({
     withShareToken,
   ]);
 
+  // ─── Check for stale in-progress build on mount ───
+  // If the DB had a queued/compiling build, poll once to see if it's still running.
+  useEffect(() => {
+    if (!initialBuildMaybeRunning) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(withShareToken(`/api/projects/${project.id}/logs`), {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        const build = data.build;
+
+        if (cancelled) return;
+
+        if (build.status === "queued" || build.status === "compiling") {
+          // Build is actually still running — start tracking it
+          compilingRef.current = true;
+          setCompiling(true);
+          setBuildStatus(build.status);
+          setPdfLoading(true);
+          startBuildPolling();
+        } else if (build.status === "success") {
+          setBuildStatus("success");
+          setBuildLogs(build.logs ?? "");
+          setBuildDuration(build.durationMs);
+          setBuildErrors(data.errors ?? []);
+          setPdfUrl(withShareToken(`/api/projects/${project.id}/pdf?t=${Date.now()}`));
+        } else if (build.status === "error" || build.status === "timeout") {
+          setBuildStatus(build.status);
+          setBuildLogs(build.logs ?? "");
+          setBuildDuration(build.durationMs);
+          setBuildErrors(data.errors ?? []);
+          setAutoCompileEnabled(false);
+        }
+      } catch {
+        // Failed to check — stay at idle
+      }
+    })();
+
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ─── WebSocket Integration ────────────────────────
 
   const {
@@ -487,6 +544,14 @@ export function EditorLayout({
     sendChatMessage,
   } = useWebSocket(project.id, {
     shareToken,
+    onSelfIdentity: (identity) => {
+      // Update currentUser with WS-assigned identity (for anonymous users)
+      if (!currentUser.id || currentUser.id !== identity.userId) {
+        const resolved = { id: identity.userId, email: identity.email, name: identity.name };
+        setCurrentUser(resolved);
+        onIdentityResolved?.(resolved);
+      }
+    },
     onBuildStatus: (data) => {
       setBuildStatus(data.status);
       if (!compilingRef.current) {

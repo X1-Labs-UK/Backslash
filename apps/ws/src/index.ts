@@ -42,6 +42,7 @@ interface DocChange {
 // ─── Socket.IO Event Maps ──────────────────────────
 
 interface ServerToClientEvents {
+  "self:identity": (data: { userId: string; name: string; email: string; color: string }) => void;
   "build:status": (data: { projectId: string; buildId: string; status: "queued" | "compiling" }) => void;
   "build:complete": (data: { projectId: string; buildId: string; status: string; pdfUrl: string | null; logs: string; durationMs: number; errors: any[] }) => void;
   "presence:users": (data: { users: PresenceUser[] }) => void;
@@ -297,9 +298,10 @@ io.use(async (socket, next) => {
     }
 
     if (!token && shareToken) {
+      const visitorNum = Math.floor(1000 + Math.random() * 9000);
       socket.data.userId = `anon_${randomUUID()}`;
       socket.data.email = "anonymous@public-link";
-      socket.data.name = "Guest";
+      socket.data.name = `Visitor ${visitorNum}`;
       socket.data.color = nextColor();
       socket.data.isAnonymous = true;
       socket.data.shareToken = shareToken;
@@ -312,9 +314,10 @@ io.use(async (socket, next) => {
 
     const user = await validateSession(token);
     if (!user && shareToken) {
+      const visitorNum = Math.floor(1000 + Math.random() * 9000);
       socket.data.userId = `anon_${randomUUID()}`;
       socket.data.email = "anonymous@public-link";
-      socket.data.name = "Guest";
+      socket.data.name = `Visitor ${visitorNum}`;
       socket.data.color = nextColor();
       socket.data.isAnonymous = true;
       socket.data.shareToken = shareToken;
@@ -347,6 +350,9 @@ io.on("connection", (socket) => {
   const { userId, name, email, color, isAnonymous, shareToken } = socket.data;
   console.log(`[WS] User connected: ${name} (${userId})`);
 
+  // Tell the client its assigned identity (especially useful for anonymous users)
+  socket.emit("self:identity", { userId, name, email, color });
+
   // Automatically join the user's personal room
   if (!isAnonymous) {
     socket.join(getUserRoom(userId));
@@ -360,11 +366,7 @@ io.on("connection", (socket) => {
     // Check access (owner or shared)
     const { access, role } = await checkProjectAccess(userId, projectId, shareToken);
     if (!access) {
-      socket.emit("build:status", {
-        projectId,
-        buildId: "",
-        status: "queued",
-      });
+      console.warn(`[WS] Access denied for ${name} (${userId}) to project ${projectId}`);
       return;
     }
 

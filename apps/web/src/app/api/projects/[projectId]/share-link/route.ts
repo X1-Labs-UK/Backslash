@@ -20,6 +20,25 @@ function resolveExpiry(expiresIn: "30m" | "7d" | "never"): Date | null {
   return new Date(now + 7 * 24 * 60 * 60 * 1000);
 }
 
+function getBaseUrl(request: NextRequest): string {
+  // Prefer forwarded headers (behind reverse proxy like Dokploy/nginx)
+  const forwardedHost = request.headers.get("x-forwarded-host");
+  const forwardedProto = request.headers.get("x-forwarded-proto") || "https";
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  // Fall back to Host header
+  const host = request.headers.get("host");
+  if (host && !host.startsWith("0.0.0.0")) {
+    const proto = request.nextUrl.protocol || "http:";
+    return `${proto}//${host}`;
+  }
+
+  // Last resort: use nextUrl.origin (may be 0.0.0.0 in Docker)
+  return request.nextUrl.origin;
+}
+
 function serializeShare(
   share: {
     role: "viewer" | "editor";
@@ -50,7 +69,7 @@ function serializeShare(
   }
 
   const token = share.token ?? null;
-  const baseUrl = request.nextUrl.origin;
+  const baseUrl = getBaseUrl(request);
 
   return {
     enabled: true,

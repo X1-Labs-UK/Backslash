@@ -29,8 +29,17 @@ interface BuildStatusData {
   status: "queued" | "compiling";
 }
 
+interface SelfIdentity {
+  userId: string;
+  name: string;
+  email: string;
+  color: string;
+}
+
 interface UseWebSocketOptions {
   shareToken?: string | null;
+  // Identity event (server tells client its assigned identity)
+  onSelfIdentity?: (identity: SelfIdentity) => void;
   // Build events
   onBuildStatus?: (data: BuildStatusData) => void;
   onBuildComplete?: (data: BuildCompleteData) => void;
@@ -176,6 +185,11 @@ export function useWebSocket(
     socket.on("connect", () => {
       console.log("[WS] Connected to WebSocket server");
       socket.emit("join:project", { projectId });
+    });
+
+    // Identity event — server tells us our assigned userId/name
+    socket.on("self:identity", (data: SelfIdentity) => {
+      optionsRef.current.onSelfIdentity?.(data);
     });
 
     // Build events

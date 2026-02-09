@@ -140,6 +140,9 @@ export default function SharedEditorPage({
         currentUser={currentUser ?? { id: "", email: "", name: "" }}
         shareToken={data.shareToken}
         isPublicShare={true}
+        onIdentityResolved={(resolved) => {
+          if (!currentUser) setCurrentUser(resolved);
+        }}
       />
     </div>
   );
