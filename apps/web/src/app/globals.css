@@ -225,12 +225,12 @@ body {
   color: var(--color-text-primary);
 }
 
-/* Selection styling */
-.cm-selectionBackground {
+/* Selection styling — native browser selection */
+.cm-content ::selection {
   background-color: var(--color-editor-selection) !important;
 }
 
-.cm-focused .cm-selectionBackground {
+.cm-line ::selection {
   background-color: var(--color-editor-selection) !important;
 }
 

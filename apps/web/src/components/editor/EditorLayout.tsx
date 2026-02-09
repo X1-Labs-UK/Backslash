@@ -305,6 +305,7 @@ export function EditorLayout({
               clearTimeout(saveTimeoutRef.current);
               saveTimeoutRef.current = null;
             }
+            navigateToFirstError(logsData.errors ?? []);
           }
 
           resetCompileState();
@@ -393,6 +394,7 @@ export function EditorLayout({
           clearTimeout(saveTimeoutRef.current);
           saveTimeoutRef.current = null;
         }
+        navigateToFirstError((data.errors as LogError[]) ?? []);
       }
 
       resetCompileState();
@@ -732,6 +734,28 @@ export function EditorLayout({
     codeEditorRef.current?.highlightText(text);
   }, []);
 
+  /** Navigate to the first build error's file and line */
+  const navigateToFirstError = useCallback(
+    (errors: LogError[]) => {
+      const firstError = errors.find((e) => e.type === "error" && e.line > 0);
+      if (!firstError) return;
+      const target = files.find(
+        (f) => f.path === firstError.file || f.path.endsWith(firstError.file) || `./${f.path}` === firstError.file
+      );
+      if (target) {
+        // Open the file if not already active
+        if (target.id !== activeFileIdRef.current) {
+          handleFileSelect(target.id, target.path);
+        }
+        // Scroll to the error line (delay to allow file content to load)
+        setTimeout(() => {
+          codeEditorRef.current?.scrollToLine(firstError.line);
+        }, 300);
+      }
+    },
+    [files, handleFileSelect]
+  );
+
   // Filter build errors for the currently active file
   const activeFileErrors = (() => {
     if (!activeFileId || buildErrors.length === 0) return [];
@@ -754,6 +778,10 @@ export function EditorLayout({
       );
       if (target) {
         handleFileSelect(target.id, target.path);
+        // Scroll to the error line after the file loads
+        setTimeout(() => {
+          codeEditorRef.current?.scrollToLine(line);
+        }, 200);
       }
     },
     [files, handleFileSelect]
