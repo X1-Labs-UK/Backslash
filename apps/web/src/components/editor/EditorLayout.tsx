@@ -10,7 +10,7 @@ import { EditorHeader } from "@/components/editor/EditorHeader";
 import { FileTree } from "@/components/editor/FileTree";
 import { CodeEditor, CodeEditorHandle } from "@/components/editor/CodeEditor";
 import { EditorTabs } from "@/components/editor/EditorTabs";
-import { PdfViewer } from "@/components/editor/PdfViewer";
+import { PdfViewer, PdfViewerHandle } from "@/components/editor/PdfViewer";
 import { BuildLogs } from "@/components/editor/BuildLogs";
 import { ChatPanel } from "@/components/editor/ChatPanel";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -157,6 +157,8 @@ export function EditorLayout({
   presenceUsers.forEach((u) => userColorMap.set(u.userId, u.color));
 
   const codeEditorRef = useRef<CodeEditorHandle>(null);
+  const pdfViewerRef = useRef<PdfViewerHandle>(null);
+  const editorScrollRef = useRef<number | null>(null);
   const savedContentRef = useRef<Map<string, string>>(new Map());
   const fileContentsRef = useRef<Map<string, string>>(new Map());
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -262,7 +264,17 @@ export function EditorLayout({
           setBuildErrors(logsData.errors ?? []);
 
           if (build.status === "success") {
+            // Save scroll positions before loading new PDF
+            pdfViewerRef.current?.saveScrollPosition();
+            editorScrollRef.current = codeEditorRef.current?.getScrollPosition() ?? null;
             setPdfUrl(`/api/projects/${project.id}/pdf?t=${Date.now()}`);
+            // Restore code editor scroll after React re-render
+            requestAnimationFrame(() => {
+              if (editorScrollRef.current !== null) {
+                codeEditorRef.current?.setScrollPosition(editorScrollRef.current);
+                editorScrollRef.current = null;
+              }
+            });
             setAutoCompileEnabled(true);
 
             // If file was changed during build, recompile
@@ -339,7 +351,17 @@ export function EditorLayout({
       setBuildErrors((data.errors as LogError[]) ?? []);
 
       if (data.status === "success") {
+        // Save scroll positions before loading new PDF
+        pdfViewerRef.current?.saveScrollPosition();
+        editorScrollRef.current = codeEditorRef.current?.getScrollPosition() ?? null;
         setPdfUrl(`/api/projects/${project.id}/pdf?t=${Date.now()}`);
+        // Restore code editor scroll after React re-render
+        requestAnimationFrame(() => {
+          if (editorScrollRef.current !== null) {
+            codeEditorRef.current?.setScrollPosition(editorScrollRef.current);
+            editorScrollRef.current = null;
+          }
+        });
         setAutoCompileEnabled(true);
 
         // If file was changed during build, recompile with latest content
@@ -805,7 +827,7 @@ export function EditorLayout({
                 />
               </Panel>
 
-              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors data-[resize-handle-active]:bg-accent" />
+              <PanelResizeHandle className="w-1.5 bg-transparent transition-colors hover:bg-accent/30 data-[resize-handle-active]:bg-accent/30 relative after:absolute after:inset-y-0 after:left-1/2 after:-translate-x-1/2 after:w-px after:bg-border" />
 
               {/* Code editor */}
               <Panel defaultSize={45} minSize={20}>
@@ -870,16 +892,16 @@ export function EditorLayout({
                 </div>
               </Panel>
 
-              <PanelResizeHandle className="w-px bg-border hover:bg-accent transition-colors data-[resize-handle-active]:bg-accent" />
+              <PanelResizeHandle className="w-1.5 bg-transparent transition-colors hover:bg-accent/30 data-[resize-handle-active]:bg-accent/30 relative after:absolute after:inset-y-0 after:left-1/2 after:-translate-x-1/2 after:w-px after:bg-border" />
 
               {/* PDF viewer */}
               <Panel defaultSize={40} minSize={15}>
-                <PdfViewer pdfUrl={pdfUrl} loading={pdfLoading} onTextSelect={handlePdfTextSelect} />
+                <PdfViewer ref={pdfViewerRef} pdfUrl={pdfUrl} loading={pdfLoading} onTextSelect={handlePdfTextSelect} />
               </Panel>
             </PanelGroup>
           </Panel>
 
-          <PanelResizeHandle className="h-px bg-border hover:bg-accent transition-colors data-[resize-handle-active]:bg-accent" />
+          <PanelResizeHandle className="h-1.5 bg-transparent transition-colors hover:bg-accent/30 data-[resize-handle-active]:bg-accent/30 relative after:absolute after:inset-x-0 after:top-1/2 after:-translate-y-1/2 after:h-px after:bg-border" />
 
           {/* Build logs */}
           <Panel defaultSize={20} minSize={5} collapsible collapsedSize={4}>

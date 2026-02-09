@@ -25,6 +25,8 @@ interface CodeEditorProps {
 export interface CodeEditorHandle {
   highlightText: (text: string) => void;
   scrollToLine: (line: number) => void;
+  getScrollPosition: () => number;
+  setScrollPosition: (pos: number) => void;
 }
 
 // ─── CodeEditor ─────────────────────────────────────
@@ -45,6 +47,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const viewRef = useRef<any>(null);
+    const contentRef = useRef(content);
+    contentRef.current = content;
     const onChangeRef = useRef(onChange);
     const onDocChangeRef = useRef(onDocChange);
     const onCursorChangeRef = useRef(onCursorChange);
@@ -71,38 +75,73 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           if (!view || !text || text.length < 3) return;
 
           const doc = view.state.doc.toString();
-          // Normalize whitespace for matching
-          const normalized = text.replace(/\s+/g, " ").trim();
-          const docNormalized = doc.replace(/\s+/g, " ");
-          const idx = docNormalized.indexOf(normalized);
-          if (idx === -1) return;
 
-          // Map normalized index back to original doc position
-          // Walk through original doc counting non-collapsed chars
-          let origFrom = 0;
-          let normCount = 0;
-          for (let i = 0; i < doc.length && normCount < idx; i++) {
-            origFrom = i + 1;
-            if (/\s/.test(doc[i])) {
-              // skip consecutive whitespace in normalized
-              while (i + 1 < doc.length && /\s/.test(doc[i + 1])) i++;
-            }
-            normCount++;
+          // Try exact match first
+          const exactIdx = doc.indexOf(text);
+          if (exactIdx !== -1) {
+            view.dispatch({
+              selection: { anchor: exactIdx, head: exactIdx + text.length },
+              scrollIntoView: true,
+            });
+            view.focus();
+            return;
           }
 
-          // For simplicity, use search to find exact match
-          const searchIdx = doc.indexOf(text);
-          const from = searchIdx !== -1 ? searchIdx : 0;
-          const to = searchIdx !== -1 ? searchIdx + text.length : 0;
+          // Whitespace-normalized matching: build a map from normalized
+          // positions back to original doc positions so we can select the
+          // correct range even when PDF whitespace differs from source.
+          const normChars: number[] = []; // normChars[i] = original index of normalized char i
+          let inWhitespace = false;
+          for (let i = 0; i < doc.length; i++) {
+            if (/\s/.test(doc[i])) {
+              if (!inWhitespace) {
+                normChars.push(i); // single space representative
+                inWhitespace = true;
+              }
+            } else {
+              normChars.push(i);
+              inWhitespace = false;
+            }
+          }
 
-          if (from === 0 && to === 0) return;
+          const docNormalized = doc.replace(/\s+/g, " ");
+          const searchNormalized = text.replace(/\s+/g, " ").trim();
+          const normIdx = docNormalized.indexOf(searchNormalized);
 
-          // Scroll to position and select
-          view.dispatch({
-            selection: { anchor: from, head: to },
-            scrollIntoView: true,
-          });
-          view.focus();
+          if (normIdx !== -1 && normIdx < normChars.length) {
+            const from = normChars[normIdx];
+            const normEnd = normIdx + searchNormalized.length - 1;
+            // Map the last normalized char back, then include up to the next
+            // original char to capture trailing content
+            let to: number;
+            if (normEnd < normChars.length) {
+              to = normChars[normEnd] + 1;
+            } else {
+              to = doc.length;
+            }
+
+            view.dispatch({
+              selection: { anchor: from, head: to },
+              scrollIntoView: true,
+            });
+            view.focus();
+            return;
+          }
+
+          // Last resort: try matching just the first few words
+          const words = searchNormalized.split(" ").filter(Boolean);
+          if (words.length >= 2) {
+            const partial = words.slice(0, Math.min(4, words.length)).join(" ");
+            const partialIdx = docNormalized.indexOf(partial);
+            if (partialIdx !== -1 && partialIdx < normChars.length) {
+              const from = normChars[partialIdx];
+              view.dispatch({
+                selection: { anchor: from, head: from },
+                scrollIntoView: true,
+              });
+              view.focus();
+            }
+          }
         },
         scrollToLine: (line: number) => {
           const view = viewRef.current;
@@ -113,6 +152,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           view.dispatch({
             effects: EV.scrollIntoView(lineInfo.from, { y: "center" }),
           });
+        },
+        getScrollPosition: () => {
+          const view = viewRef.current;
+          if (!view) return 0;
+          return view.scrollDOM.scrollTop;
+        },
+        setScrollPosition: (pos: number) => {
+          const view = viewRef.current;
+          if (!view) return;
+          view.scrollDOM.scrollTop = pos;
         },
       }),
       []
@@ -332,7 +381,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         );
 
         const state = EditorState.create({
-          doc: content,
+          doc: contentRef.current,
           extensions: [
             lineNumbers(),
             highlightActiveLine(),
@@ -396,6 +445,20 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         });
 
         viewRef.current = view;
+
+        // If content changed during async init, sync the editor to the latest value
+        const latestContent = contentRef.current;
+        if (view.state.doc.toString() !== latestContent) {
+          isExternalUpdate.current = true;
+          view.dispatch({
+            changes: {
+              from: 0,
+              to: view.state.doc.length,
+              insert: latestContent,
+            },
+          });
+          isExternalUpdate.current = false;
+        }
       }
 
       initEditor();
