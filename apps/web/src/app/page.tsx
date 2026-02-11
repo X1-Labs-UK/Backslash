@@ -74,7 +74,7 @@ export default function HomePage() {
             Get Started
           </Link>
           <a
-            href="#"
+            href="https://github.com/Manan-Santoki/Backslash"
             className="rounded-lg border border-border bg-bg-elevated px-6 py-3 text-base font-medium text-text-primary transition-colors hover:bg-border"
           >
             View on GitHub
