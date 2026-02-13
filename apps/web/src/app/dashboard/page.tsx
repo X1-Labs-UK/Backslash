@@ -14,6 +14,15 @@ import {
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────
+interface PrimitiveLabel {
+  name: string;
+}
+
+interface Label extends PrimitiveLabel {
+  id: string;
+  createdAt: string;
+  userId : string;
+}
 
 interface Project {
   id: string;
@@ -27,6 +36,7 @@ interface Project {
   isShared: boolean;
   createdAt: string;
   updatedAt: string;
+  labels : Label[];
 }
 
 interface SharedProject {
@@ -42,14 +52,9 @@ interface SharedProject {
   ownerEmail: string;
   role: "viewer" | "editor";
   lastBuildStatus: string | null;
+  labels: Label[];
 }
 
-interface Label {
-  id: string;
-  name: string;
-  createdAt: string;
-  userId : string;
-}
 
 type Template = "blank" | "article" | "thesis" | "beamer" | "letter";
 
@@ -127,15 +132,16 @@ function SkeletonCard() {
 
 interface NewProjectDialogProps {
   open: boolean;
+  defaultLabels : PrimitiveLabel[];
   onClose: () => void;
   onCreated: () => void;
 }
 
-function NewProjectDialog({ open, onClose, onCreated }: NewProjectDialogProps) {
+function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjectDialogProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [template, setTemplate] = useState<Template>("blank");
-  const [labels, setLabels] = useState<Label[]>([]);
+  const [labels, setLabels] = useState<PrimitiveLabel[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -143,6 +149,7 @@ function NewProjectDialog({ open, onClose, onCreated }: NewProjectDialogProps) {
     setName("");
     setDescription("");
     setTemplate("blank");
+    setLabels([]);
     setError("");
   }
 
@@ -163,6 +170,15 @@ function NewProjectDialog({ open, onClose, onCreated }: NewProjectDialogProps) {
         setError(data.error || "Failed to create project");
         return;
       }
+
+      // Attach all the labels specified
+      const { projectId } = await res.json();
+      await Promise.all(labels.map(label =>
+          fetch(`/api/labels/attach`, {
+            method: "POST",
+            body: JSON.stringify({labelName: label.name, projectId}),
+            headers: { "Content-Type": "application/json" },
+          })));
 
       resetForm();
       onCreated();
@@ -271,20 +287,37 @@ function NewProjectDialog({ open, onClose, onCreated }: NewProjectDialogProps) {
           {/* Labels */}
           <div>
             <label
-              htmlFor="project-name"
+              htmlFor="labels"
               className="mb-1.5 block text-sm font-medium text-text-secondary"
             >
-              Project name
+              Labels
             </label>
             <input
-              id="project-name"
+              id="labels"
               type="text"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => setLabels(
+                  [...labels, {
+                    name: e.target.value
+                  }]
+              )}
               required
-              placeholder="My LaTeX Document"
+              placeholder="Research"
               className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent"
             />
+            <datalist id="labels">
+              {defaultLabels.map((label) => (
+                  <option value={label.name}/>
+              ))}
+            </datalist>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+                {/* Engine badge */}
+              {labels.map((label) => (
+                  <span className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                  {label.name}
+                </span>
+              ))}
+            </div>
           </div>
 
           {/* Actions */}
@@ -437,6 +470,7 @@ export default function DashboardPage() {
   const [showNewDialog, setShowNewDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [labels, setLabels] = useState<Label[]>([]);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -453,9 +487,22 @@ export default function DashboardPage() {
     }
   }, []);
 
+    const fetchLabels = useCallback(async () => {
+    try {
+      const res = await fetch("/api/labels", { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setLabels(data.labels);
+      }
+    } catch {
+      // Silently fail -- user sees no labels
+    }
+  }, []);
+
   useEffect(() => {
     fetchProjects();
-  }, [fetchProjects]);
+    fetchLabels();
+  }, [fetchProjects, fetchLabels]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -463,10 +510,11 @@ export default function DashboardPage() {
         return;
       }
       fetchProjects();
+      fetchLabels();
     }, 10_000);
 
     return () => clearInterval(interval);
-  }, [fetchProjects]);
+  }, [fetchProjects, fetchLabels]);
 
   async function handleDelete() {
     if (!deleteTarget) return;
@@ -570,6 +618,14 @@ export default function DashboardPage() {
                 <span className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
                   {project.engine}
                 </span>
+
+                {/* Label Badges */}
+                {project.labels.map((label) => (
+                  <span className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                  {label.name}
+                </span>
+                ))}
+
 
                 <span
                   className={cn(
@@ -685,6 +741,7 @@ export default function DashboardPage() {
         open={showNewDialog}
         onClose={() => setShowNewDialog(false)}
         onCreated={fetchProjects}
+        defaultLabels={labels}
       />
 
       <DeleteDialog

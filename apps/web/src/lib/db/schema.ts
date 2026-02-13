@@ -136,7 +136,7 @@ export const projectLabels = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
 
-    fileId: uuid("priject_id")
+    projectId: uuid("project_id")
       .notNull()
       .references(() => projectFiles.id, { onDelete: "cascade" }),
 
@@ -147,8 +147,8 @@ export const projectLabels = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("project_labels_unique_idx").on(table.fileId, table.labelId),
-    index("project_labels_file_idx").on(table.fileId),
+    uniqueIndex("project_labels_unique_idx").on(table.projectId, table.labelId),
+    index("project_labels_file_idx").on(table.projectId),
     index("project_labels_label_idx").on(table.labelId),
   ]
 );
@@ -323,7 +323,7 @@ export const labelsRelations = relations(labels, ({ one, many }) => ({
 
 export const projectLabelsRelations = relations(projectLabels, ({ one }) => ({
   file: one(projectFiles, {
-    fields: [projectLabels.fileId],
+    fields: [projectLabels.projectId],
     references: [projectFiles.id],
   }),
   label: one(labels, {
