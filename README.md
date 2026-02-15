@@ -89,6 +89,9 @@ SESSION_SECRET=change-me-to-a-random-64-char-string
 # Only set this if you want to use an external database.
 # By default, the bundled PostgreSQL is used automatically.
 # DATABASE_URL=postgresql://user:password@your-host:5432/backslash
+AUTO_DB_MIGRATE=true
+MIGRATE_MAX_ATTEMPTS=30
+MIGRATE_RETRY_DELAY_SECONDS=2
 
 # Compilation (optional)
 COMPILE_MEMORY=1g
@@ -123,6 +126,9 @@ SECURE_COOKIES=false
 | `WS_PORT` | `3001` | Host port to expose the WebSocket server on |
 | `SESSION_SECRET` | — | Secret key for signing/verifying JWT session cookies across `app` and `ws` (**required**) |
 | `DATABASE_URL` | *(bundled postgres)* | Override to use an external PostgreSQL instance |
+| `AUTO_DB_MIGRATE` | `true` | Run Drizzle migrations automatically on startup (app + worker); set `false` only if you manage migrations externally |
+| `MIGRATE_MAX_ATTEMPTS` | `30` | Maximum migration retry attempts on startup |
+| `MIGRATE_RETRY_DELAY_SECONDS` | `2` | Delay between migration retry attempts |
 | `COMPILE_MEMORY` | `1g` | Memory limit per compile container |
 | `COMPILE_CPUS` | `1.5` | CPU limit per compile container |
 | `MAX_CONCURRENT_BUILDS` | `5` | Maximum simultaneous compilations |

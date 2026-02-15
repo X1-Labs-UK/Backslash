@@ -1,5 +1,8 @@
 import IORedis from "ioredis";
 import { randomUUID } from "crypto";
+import fs from "fs";
+import path from "path";
+import { spawnSync } from "child_process";
 
 type RunnerModule = {
   startCompileRunner: () => unknown;
@@ -50,6 +53,63 @@ const heartbeatRedis = new IORedis(REDIS_URL, {
   enableReadyCheck: false,
 });
 
+function sleepMs(ms: number): void {
+  const waitBuffer = new SharedArrayBuffer(4);
+  const waitView = new Int32Array(waitBuffer);
+  Atomics.wait(waitView, 0, 0, ms);
+}
+
+function resolveMigrateScriptPath(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "apps/web/scripts/migrate.mjs"),
+    path.resolve(process.cwd(), "scripts/migrate.mjs"),
+    path.resolve(process.cwd(), "../web/scripts/migrate.mjs"),
+    path.resolve(process.cwd(), "../../apps/web/scripts/migrate.mjs"),
+    path.resolve("/app/apps/web/scripts/migrate.mjs"),
+  ];
+  return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+}
+
+function runMigrations(): void {
+  if (process.env.AUTO_DB_MIGRATE === "false") {
+    console.log("[Worker] AUTO_DB_MIGRATE=false, skipping migrations");
+    return;
+  }
+
+  const migrateScriptPath = resolveMigrateScriptPath();
+  if (!migrateScriptPath) {
+    throw new Error("Could not find migration script");
+  }
+
+  const maxAttempts = Number(process.env.MIGRATE_MAX_ATTEMPTS ?? "30");
+  const retryDelaySeconds = Number(process.env.MIGRATE_RETRY_DELAY_SECONDS ?? "2");
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    console.log(
+      `[Worker] Running database migrations (attempt ${attempt}/${maxAttempts})...`
+    );
+
+    const migrateResult = spawnSync(process.execPath, [migrateScriptPath], {
+      env: process.env,
+      stdio: "inherit",
+    });
+
+    if ((migrateResult.status ?? 1) === 0) {
+      console.log("[Worker] Migrations completed successfully");
+      return;
+    }
+
+    if (attempt === maxAttempts) {
+      throw new Error("Migrations failed after all retry attempts");
+    }
+
+    console.warn(
+      `[Worker] Migration attempt failed, retrying in ${retryDelaySeconds}s...`
+    );
+    sleepMs(retryDelaySeconds * 1000);
+  }
+}
+
 async function publishHeartbeat() {
   const payload = JSON.stringify({
     instanceId: workerInstanceId,
@@ -60,6 +120,8 @@ async function publishHeartbeat() {
 }
 
 async function bootstrap() {
+  runMigrations();
+
   console.log("Backslash Compilation Worker");
   console.log("============================");
   console.log(`Redis: ${REDIS_URL}`);
