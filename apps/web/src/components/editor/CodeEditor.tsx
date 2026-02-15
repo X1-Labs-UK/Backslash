@@ -49,12 +49,11 @@ export interface CodeEditorHandle {
 
 export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
   function CodeEditor(
-    {
-      content,
-      onChange,
-      language = "latex",
-      readOnly = false,
-      errors,
+      {
+        content,
+        onChange,
+        readOnly = false,
+        errors,
       onDocChange,
       onCursorChange,
       remoteChanges,

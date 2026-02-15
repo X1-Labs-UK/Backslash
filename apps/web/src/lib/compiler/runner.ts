@@ -1,7 +1,7 @@
-import IORedis from "ioredis";
-import { eq, inArray } from "drizzle-orm";
+import { Queue, Worker } from "bullmq";
+import IORedis, { type RedisOptions } from "ioredis";
+import { and, eq, inArray, lt } from "drizzle-orm";
 import { LIMITS } from "@backslash/shared";
-import type { Engine } from "@backslash/shared";
 
 import fs from "fs/promises";
 import path from "path";
@@ -12,23 +12,17 @@ import { getProjectDir, getPdfPath, fileExists } from "@/lib/storage";
 import { runCompileContainer } from "./docker";
 import { parseLatexLog } from "./logParser";
 import { broadcastBuildUpdate } from "@/lib/websocket/server";
+import {
+  COMPILE_CANCEL_KEY_PREFIX,
+  COMPILE_QUEUE_NAME,
+  enqueueCompileJob,
+  requestCompileCancel,
+  type CompileJobData,
+} from "./compileQueue";
 
 const STORAGE_PATH = process.env.STORAGE_PATH || "/data";
 
 // ─── Types ───────────────────────────────────────────
-
-export interface CompileJobData {
-  buildId: string;
-  projectId: string;
-  /** Legacy field retained for backward compatibility with queued jobs */
-  userId: string;
-  /** Owner storage root. Project files are read/written from this user scope. */
-  storageUserId?: string;
-  /** Actual user who triggered this build (for attribution and direct notifications). */
-  triggeredByUserId?: string;
-  engine: Engine;
-  mainFile: string;
-}
 
 export interface CompileJobResult {
   success: boolean;
@@ -51,23 +45,45 @@ export interface RunnerHealth {
 // ─── Configuration ───────────────────────────────────
 
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
-const REDIS_KEY = "compile:pending";
-const CANCEL_KEY_PREFIX = "compile:cancel:";
-const POLL_INTERVAL_MS = 1_000;
 
 const MAX_CONCURRENT_BUILDS = parseInt(
   process.env.MAX_CONCURRENT_BUILDS ||
     String(LIMITS.MAX_CONCURRENT_BUILDS_DEFAULT),
   10
 );
+const STALE_BUILD_TTL_MINUTES = parseInt(
+  process.env.STALE_BUILD_TTL_MINUTES || "60",
+  10
+);
+
+function parseRedisConnection(url: string): RedisOptions {
+  const parsed = new URL(url);
+  const dbIndex = parsed.pathname && parsed.pathname !== "/"
+    ? Number(parsed.pathname.slice(1))
+    : 0;
+
+  return {
+    host: parsed.hostname,
+    port: Number(parsed.port || (parsed.protocol === "rediss:" ? "6380" : "6379")),
+    username: parsed.username || undefined,
+    password: parsed.password || undefined,
+    db: Number.isFinite(dbIndex) ? dbIndex : 0,
+    tls: parsed.protocol === "rediss:" ? {} : undefined,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  };
+}
+
+const REDIS_CONNECTION = parseRedisConnection(REDIS_URL);
 
 // ─── CompileRunner Class ─────────────────────────────
 
 class CompileRunner {
   private redis: IORedis;
-  private activeJobs = 0;
+  private queue: Queue<CompileJobData> | null = null;
+  private worker: Worker<CompileJobData> | null = null;
+
   private maxConcurrent: number;
-  private pollTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private totalProcessed = 0;
   private totalErrors = 0;
@@ -77,7 +93,7 @@ class CompileRunner {
   constructor() {
     this.maxConcurrent = MAX_CONCURRENT_BUILDS;
     this.redis = new IORedis(REDIS_URL, {
-      maxRetriesPerRequest: 3,
+      maxRetriesPerRequest: null,
       enableReadyCheck: false,
       keepAlive: 10_000,
       reconnectOnError: () => true,
@@ -95,65 +111,71 @@ class CompileRunner {
 
   start(): void {
     if (this.running) return;
+
+    this.queue = new Queue<CompileJobData>(COMPILE_QUEUE_NAME, {
+      connection: REDIS_CONNECTION,
+      defaultJobOptions: {
+        removeOnComplete: true,
+        removeOnFail: 1000,
+      },
+    });
+
+    this.worker = new Worker<CompileJobData>(
+      COMPILE_QUEUE_NAME,
+      async (job: { data: CompileJobData }) => this.processJob(job.data),
+      {
+        connection: REDIS_CONNECTION,
+        concurrency: this.maxConcurrent,
+      }
+    );
+
+    this.worker.on("error", (err: Error) => {
+      console.error("[Runner] Worker error:", err.message);
+    });
+
     this.running = true;
     this.startedAt = Date.now();
 
     // Clean stale builds from previous instance (fire-and-forget)
     cleanStaleBuildRecords();
 
-    // Start polling
-    this.pollTimer = setInterval(() => this.poll(), POLL_INTERVAL_MS);
-
     console.log(
-      `[Runner] Compile runner started (concurrency=${this.maxConcurrent}, poll=${POLL_INTERVAL_MS}ms)`
+      `[Runner] Compile runner started (concurrency=${this.maxConcurrent}, queue=${COMPILE_QUEUE_NAME})`
     );
   }
 
   async addJob(data: CompileJobData): Promise<void> {
-    console.log(`[Runner] Adding compile job ${data.buildId} for project ${data.projectId}`);
-    await this.redis.rpush(REDIS_KEY, JSON.stringify(data));
-    console.log(`[Runner] Job added successfully: ${data.buildId}`);
-  }
-
-  private async poll(): Promise<void> {
-    if (!this.running) return;
+    if (!this.running) {
+      this.start();
+    }
+    if (!this.queue) {
+      throw new Error("Queue not initialized");
+    }
 
     try {
-      while (this.activeJobs < this.maxConcurrent) {
-        const raw = await this.redis.lpop(REDIS_KEY);
-        if (!raw) break;
-
-        let data: CompileJobData;
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          console.error("[Runner] Failed to parse job data:", raw);
-          continue;
-        }
-
-        if (await this.isBuildCanceled(data.buildId)) {
-          await this.handleCanceledBuild(data, "Build canceled before starting.");
-          continue;
-        }
-
-        this.activeJobs++;
-        console.log(`[Runner] Processing job ${data.buildId} (active=${this.activeJobs}/${this.maxConcurrent})`);
-
-        this.processJob(data).finally(() => {
-          this.activeJobs--;
-        });
-      }
+      await this.queue.add("compile", data, {
+        jobId: data.buildId,
+      });
+      console.log(`[Runner] Job queued: ${data.buildId}`);
     } catch (err) {
-      console.error("[Runner] Poll error:", err instanceof Error ? err.message : err);
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes("Job is already waiting") || message.includes("Job already exists")) {
+        console.warn(`[Runner] Duplicate job ignored: ${data.buildId}`);
+        return;
+      }
+      throw err;
     }
   }
 
   private async processJob(data: CompileJobData): Promise<void> {
     const { buildId, projectId, userId, engine, mainFile } = data;
     const storageUserId = data.storageUserId ?? userId;
-    const actorUserId = data.triggeredByUserId ?? userId;
+    const notifyUserId = userId;
+    const actorUserId = data.triggeredByUserId ?? null;
     const startTime = Date.now();
     const controller = new AbortController();
+    let cancelPollTimer: ReturnType<typeof setInterval> | null = null;
+    let cancelCheckInFlight = false;
 
     // Isolated build directory to prevent race conditions between concurrent builds
     const buildDir = path.join(STORAGE_PATH, "builds", buildId);
@@ -161,10 +183,31 @@ class CompileRunner {
     try {
       this.activeControllers.set(buildId, controller);
 
+      // Watch distributed cancel flag while this build is running.
+      cancelPollTimer = setInterval(() => {
+        if (cancelCheckInFlight || controller.signal.aborted) return;
+        cancelCheckInFlight = true;
+        void this.isBuildCanceled(buildId)
+          .then((canceled) => {
+            if (canceled) {
+              controller.abort();
+            }
+          })
+          .catch((err) => {
+            console.error(
+              `[Runner] Cancel check failed for ${buildId}:`,
+              err instanceof Error ? err.message : err
+            );
+          })
+          .finally(() => {
+            cancelCheckInFlight = false;
+          });
+      }, 500);
+
       // Step 1: Mark as compiling
       await updateBuildStatus(buildId, "compiling");
 
-      broadcastBuildUpdate(actorUserId, {
+      broadcastBuildUpdate(notifyUserId, {
         projectId,
         buildId,
         status: "compiling",
@@ -180,6 +223,7 @@ class CompileRunner {
       const containerResult = await runCompileContainer({
         projectDir: buildDir,
         mainFile,
+        engine,
         signal: controller.signal,
       });
 
@@ -226,6 +270,7 @@ class CompileRunner {
       await db
         .update(builds)
         .set({
+          engine: containerResult.engineUsed,
           status: finalStatus,
           logs: containerResult.canceled
             ? "Build canceled by user."
@@ -238,7 +283,7 @@ class CompileRunner {
         .where(eq(builds.id, buildId));
 
       // Step 5: Broadcast completion
-      broadcastBuildUpdate(actorUserId, {
+      broadcastBuildUpdate(notifyUserId, {
         projectId,
         buildId,
         status: finalStatus,
@@ -261,7 +306,7 @@ class CompileRunner {
       await updateBuildError(buildId, errorMessage, durationMs);
 
       // Broadcast the error
-      broadcastBuildUpdate(actorUserId, {
+      broadcastBuildUpdate(notifyUserId, {
         projectId,
         buildId,
         status: "error",
@@ -281,8 +326,12 @@ class CompileRunner {
 
       this.totalErrors++;
       console.error(`[Runner] Job ${buildId} failed: ${errorMessage}`);
+      throw err;
     } finally {
       this.activeControllers.delete(buildId);
+      if (cancelPollTimer) {
+        clearInterval(cancelPollTimer);
+      }
       // Always clean up the isolated build directory
       try {
         await fs.rm(buildDir, { recursive: true, force: true });
@@ -295,7 +344,7 @@ class CompileRunner {
   getHealth(): RunnerHealth {
     return {
       running: this.running,
-      activeJobs: this.activeJobs,
+      activeJobs: this.activeControllers.size,
       maxConcurrent: this.maxConcurrent,
       totalProcessed: this.totalProcessed,
       totalErrors: this.totalErrors,
@@ -308,19 +357,14 @@ class CompileRunner {
     console.log("[Runner] Shutting down compile runner...");
     this.running = false;
 
-    if (this.pollTimer) {
-      clearInterval(this.pollTimer);
-      this.pollTimer = null;
+    if (this.worker) {
+      await this.worker.close();
+      this.worker = null;
     }
 
-    // Wait for active jobs to finish (up to 30s)
-    const deadline = Date.now() + 30_000;
-    while (this.activeJobs > 0 && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    if (this.activeJobs > 0) {
-      console.warn(`[Runner] Shutting down with ${this.activeJobs} active job(s)`);
+    if (this.queue) {
+      await this.queue.close();
+      this.queue = null;
     }
 
     try {
@@ -333,51 +377,39 @@ class CompileRunner {
   }
 
   async cancelBuild(buildId: string): Promise<{ wasQueued: boolean; wasRunning: boolean }> {
-    const wasRunning = this.activeControllers.has(buildId);
-    if (wasRunning) {
+    const localRunning = this.activeControllers.has(buildId);
+    if (localRunning) {
       this.activeControllers.get(buildId)?.abort();
     }
 
-    const wasQueued = await this.removeQueuedJob(buildId);
-    await this.redis.setex(`${CANCEL_KEY_PREFIX}${buildId}`, 900, "1");
+    let wasQueued = false;
+    let wasRunning = localRunning;
+
+    if (!this.running) {
+      this.start();
+    }
+
+    if (this.queue) {
+      const job = await this.queue.getJob(buildId);
+      if (job) {
+        const state = await job.getState();
+        if (state === "active") {
+          wasRunning = true;
+        }
+        if (state === "waiting" || state === "delayed" || state === "prioritized") {
+          await job.remove();
+          wasQueued = true;
+        }
+      }
+    }
+
+    await this.redis.setex(`${COMPILE_CANCEL_KEY_PREFIX}${buildId}`, 900, "1");
 
     return { wasQueued, wasRunning };
   }
 
-  private async removeQueuedJob(buildId: string): Promise<boolean> {
-    const entries = await this.redis.lrange(REDIS_KEY, 0, -1);
-    if (entries.length === 0) return false;
-
-    const remaining: string[] = [];
-    let removed = false;
-
-    for (const entry of entries) {
-      try {
-        const parsed = JSON.parse(entry) as CompileJobData;
-        if (parsed.buildId === buildId) {
-          removed = true;
-          continue;
-        }
-      } catch {
-        // Keep malformed entries to avoid losing jobs
-      }
-      remaining.push(entry);
-    }
-
-    if (!removed) return false;
-
-    const pipeline = this.redis.multi();
-    pipeline.del(REDIS_KEY);
-    if (remaining.length > 0) {
-      pipeline.rpush(REDIS_KEY, ...remaining);
-    }
-    await pipeline.exec();
-
-    return true;
-  }
-
   private async isBuildCanceled(buildId: string): Promise<boolean> {
-    const key = `${CANCEL_KEY_PREFIX}${buildId}`;
+    const key = `${COMPILE_CANCEL_KEY_PREFIX}${buildId}`;
     const canceled = await this.redis.get(key);
     if (canceled) {
       await this.redis.del(key);
@@ -386,11 +418,12 @@ class CompileRunner {
     return false;
   }
 
-  private async handleCanceledBuild(
+  async handleCanceledBuild(
     data: CompileJobData,
     message: string
   ): Promise<void> {
-    const actorUserId = data.triggeredByUserId ?? data.userId;
+    const notifyUserId = data.userId;
+    const actorUserId = data.triggeredByUserId ?? null;
     await db
       .update(builds)
       .set({
@@ -401,7 +434,7 @@ class CompileRunner {
       })
       .where(eq(builds.id, data.buildId));
 
-    broadcastBuildUpdate(actorUserId, {
+    broadcastBuildUpdate(notifyUserId, {
       projectId: data.projectId,
       buildId: data.buildId,
       status: "canceled",
@@ -461,6 +494,9 @@ async function updateBuildError(
 
 async function cleanStaleBuildRecords(): Promise<void> {
   try {
+    const cutoff = new Date(
+      Date.now() - Math.max(STALE_BUILD_TTL_MINUTES, 1) * 60_000
+    );
     const stale = await db
       .update(builds)
       .set({
@@ -468,7 +504,12 @@ async function cleanStaleBuildRecords(): Promise<void> {
         logs: "Build interrupted — server restarted. Please recompile.",
         completedAt: new Date(),
       })
-      .where(inArray(builds.status, ["queued", "compiling"]))
+      .where(
+        and(
+          inArray(builds.status, ["queued", "compiling"]),
+          lt(builds.createdAt, cutoff)
+        )
+      )
       .returning({ id: builds.id });
 
     if (stale.length > 0) {
@@ -508,21 +549,13 @@ export function startCompileRunner(): CompileRunner {
 }
 
 export async function addCompileJob(data: CompileJobData): Promise<void> {
-  let runner = getRunnerInstance();
-  if (!runner) {
-    runner = startCompileRunner();
-  }
-  await runner.addJob(data);
+  await enqueueCompileJob(data);
 }
 
 export async function cancelCompileJob(
   buildId: string
 ): Promise<{ wasQueued: boolean; wasRunning: boolean }> {
-  let runner = getRunnerInstance();
-  if (!runner) {
-    runner = startCompileRunner();
-  }
-  return runner.cancelBuild(buildId);
+  return requestCompileCancel(buildId);
 }
 
 export async function shutdownRunner(): Promise<void> {

@@ -18,7 +18,7 @@
 ## ✨ Features
 
 - **Live PDF Preview** — See your document update in real-time as you type. Auto-compilation on save with real-time WebSocket status updates via a standalone server.
-- **Full LaTeX Engine Support** — Compile with `pdflatex`, `xelatex`, `lualatex`, or `latex`. Engine auto-detection based on document packages.
+- **Full LaTeX Engine Support** — Compile with `auto`, `pdflatex`, `xelatex`, `lualatex`, or `latex`. `auto` is the default and selects the engine from source heuristics at build time.
 - **Project Management** — Create, organize, and manage multiple LaTeX projects from a clean dashboard.
 - **Built-in File Tree** — Navigate project files with a sidebar file explorer. Create, rename, upload, and delete files.
 - **Code Editor** — Syntax-highlighted LaTeX editing powered by CodeMirror 6 with search, autocomplete, and keyboard shortcuts.
@@ -26,12 +26,13 @@
 - **Resizable Panels** — IDE-like layout with draggable dividers between file tree, editor, PDF viewer, and build logs.
 - **Template System** — Start new projects from built-in templates: Blank, Article, Thesis, Beamer (Presentation), and Letter.
 - **Sandboxed Compilation** — Each build runs in an isolated Docker container with memory/CPU limits, network disabled, and auto-cleanup.
+- **BullMQ Build Queue** — Web/API processes enqueue and cancel jobs in BullMQ (Redis-backed); compile execution runs in the dedicated worker by default.
 - **REST API** — Full public API with API key authentication. Compile LaTeX to PDF, manage projects, upload files — all via HTTP.
 - **Developer Dashboard** — Generate and manage API keys from the UI. Built-in API documentation page.
-- **User Authentication** — Session-based auth with secure password hashing (bcrypt) and JWT session tokens.
+- **User Authentication** — Session-based auth with secure password hashing (bcrypt), JWT-signed session cookies, and DB-backed session records.
 - **Dark & Light Themes** — Toggle between dark and light mode with a single click.
-- **One-Click Self-Hosting** — Deploy on your own server with a single `docker compose up -d`. Everything included — PostgreSQL, Redis, app.
-- **No Limits** — No file size caps, no compile timeouts (configurable), no project restrictions. Your server, your rules.
+- **One-Click Self-Hosting** — Deploy with a single `docker compose up -d`. Includes PostgreSQL, Redis, web app, WebSocket server, and dedicated compile worker.
+- **Configurable Limits** — File size, compile timeout, and concurrency limits are configurable via environment variables.
 - **Open Source** — Fully open-source under the MIT license.
 
 ---
@@ -51,7 +52,7 @@ cp .env.example .env
 docker compose up -d
 ```
 
-That's it. PostgreSQL, Redis, and the web app all start together.
+That's it. PostgreSQL, Redis, web app, WebSocket server, and compile worker all start together.
 
 Open [http://localhost:3000](http://localhost:3000) (or whichever `PORT` you set) and create your account.
 
@@ -63,6 +64,7 @@ Docker Compose automatically:
 - Starts PostgreSQL 16 with persistent storage
 - Starts Redis 7 for job queuing
 - Builds and launches the web application on port 3000
+- Starts the dedicated BullMQ compile worker
 - Starts the WebSocket server on port 3001 for real-time build updates
 
 ### Platform Deployment (Dokploy, Coolify, Portainer, etc.)
@@ -93,6 +95,13 @@ COMPILE_MEMORY=1g
 COMPILE_CPUS=1.5
 MAX_CONCURRENT_BUILDS=5
 COMPILE_TIMEOUT=120
+STALE_BUILD_TTL_MINUTES=60
+RUN_COMPILE_RUNNER_IN_WEB=false
+WORKER_HEARTBEAT_KEY=compile:worker:heartbeat
+WORKER_HEARTBEAT_MAX_AGE_MS=30000
+WORKER_HEARTBEAT_INTERVAL_MS=5000
+ASYNC_COMPILE_RESULT_TTL_MINUTES=60
+ASYNC_COMPILE_MAX_CONCURRENT_BUILDS=5
 
 # Registration
 DISABLE_SIGNUP=false
@@ -112,12 +121,19 @@ SECURE_COOKIES=false
 |---|---|---|
 | `PORT` | `3000` | Host port to expose the app on |
 | `WS_PORT` | `3001` | Host port to expose the WebSocket server on |
-| `SESSION_SECRET` | — | Secret key for signing session tokens (**required**) |
+| `SESSION_SECRET` | — | Secret key for signing/verifying JWT session cookies across `app` and `ws` (**required**) |
 | `DATABASE_URL` | *(bundled postgres)* | Override to use an external PostgreSQL instance |
 | `COMPILE_MEMORY` | `1g` | Memory limit per compile container |
 | `COMPILE_CPUS` | `1.5` | CPU limit per compile container |
 | `MAX_CONCURRENT_BUILDS` | `5` | Maximum simultaneous compilations |
 | `COMPILE_TIMEOUT` | `120` | Compilation timeout in seconds |
+| `STALE_BUILD_TTL_MINUTES` | `60` | Minimum age (in minutes) before queued/compiling builds are considered stale during startup cleanup |
+| `RUN_COMPILE_RUNNER_IN_WEB` | `false` | When `false`, web only enqueues/cancels jobs and a dedicated worker executes compiles; set `true` only for single-process/dev mode |
+| `WORKER_HEARTBEAT_KEY` | `compile:worker:heartbeat` | Redis key used by worker heartbeat and health checks |
+| `WORKER_HEARTBEAT_MAX_AGE_MS` | `30000` | Maximum heartbeat age before health check marks worker as stale |
+| `WORKER_HEARTBEAT_INTERVAL_MS` | `5000` | Worker heartbeat publish interval |
+| `ASYNC_COMPILE_RESULT_TTL_MINUTES` | `60` | Retention window for async one-shot compile artifacts before cleanup |
+| `ASYNC_COMPILE_MAX_CONCURRENT_BUILDS` | `5` | Max concurrent async one-shot compile jobs per worker |
 | `DISABLE_SIGNUP` | `false` | Set to `true` to disable new user registration |
 | `SECURE_COOKIES` | `false` | Set to `true` if serving over HTTPS (reverse proxy with TLS) |
 | `NEXT_PUBLIC_WS_URL` | *(auto-detect)* | Override WebSocket server URL for the frontend (e.g. `wss://your-domain.com/ws`) |
@@ -132,22 +148,24 @@ Backslash includes a full REST API for programmatic access. Generate an API key 
 ### Quick Start
 
 ```bash
-# Upload a .tex file and get a compiled PDF back
+# Submit async one-shot compile job
 curl -X POST https://your-instance.com/api/v1/compile \
-  -H "Authorization: Bearer bs_YOUR_API_KEY" \
-  -F "file=@document.tex" \
-  --output output.pdf
-
-# Or get the result as base64 JSON
-curl -X POST "https://your-instance.com/api/v1/compile?format=base64" \
   -H "Authorization: Bearer bs_YOUR_API_KEY" \
   -F "file=@document.tex"
 
-# JSON body also works (source as a string)
-curl -X POST https://your-instance.com/api/v1/compile \
+# Poll status
+curl https://your-instance.com/api/v1/compile/JOB_ID \
   -H "Authorization: Bearer bs_YOUR_API_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"source": "\\documentclass{article}\n\\begin{document}\nHello!\n\\end{document}"}' \
+  -H "Accept: application/json"
+
+# Fetch JSON output (base64 PDF + logs/errors)
+curl "https://your-instance.com/api/v1/compile/JOB_ID/output?format=json" \
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \
+  -o output.json
+
+# Fetch raw PDF
+curl "https://your-instance.com/api/v1/compile/JOB_ID/output?format=pdf" \
+  -H "Authorization: Bearer bs_YOUR_API_KEY" \
   --output output.pdf
 ```
 
@@ -155,7 +173,10 @@ curl -X POST https://your-instance.com/api/v1/compile \
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/compile` | One-shot compile — upload `.tex` file or send JSON, get PDF back |
+| `POST` | `/api/v1/compile` | Submit async one-shot compile job |
+| `GET` | `/api/v1/compile/:jobId` | Poll async one-shot compile status |
+| `GET` | `/api/v1/compile/:jobId/output` | Fetch one-shot output (`format=json|base64|pdf`) |
+| `POST` | `/api/v1/compile/:jobId/cancel` | Cancel async one-shot compile job |
 | `GET` | `/api/v1/projects` | List all projects |
 | `POST` | `/api/v1/projects` | Create a project from template |
 | `GET` | `/api/v1/projects/:id` | Get project details + files |
@@ -190,7 +211,7 @@ backslash/
 ├── apps/
 │   ├── web/              # Next.js 15 app (frontend + API)
 │   ├── ws/               # Standalone WebSocket server (Socket.IO + Redis pub/sub)
-│   └── worker/           # Background build worker (BullMQ)
+│   └── worker/           # Standalone build runner service (BullMQ + Redis)
 ├── packages/
 │   └── shared/           # Shared types, constants, and utilities
 ├── docker/
@@ -207,13 +228,13 @@ backslash/
 | Layer | Technology |
 |---|---|
 | **Frontend** | Next.js 15 (App Router), React 19, Tailwind CSS 4, CodeMirror 6, react-pdf |
-| **Backend** | Next.js API Routes, BullMQ (job queue), Redis pub/sub |
+| **Backend** | Next.js API Routes, BullMQ compile queue, Redis pub/sub |
 | **Real-time** | Standalone Socket.IO server (WebSocket), Redis pub/sub bridge |
 | **Database** | PostgreSQL 16 with Drizzle ORM |
-| **Cache / Queue** | Redis 7 (session cache + BullMQ broker) |
+| **Queue / Messaging** | BullMQ + Redis 7 (compile queue + pub/sub messaging) |
 | **Compilation** | Docker containers via dockerode (ephemeral, sandboxed, per-build) |
 | **LaTeX** | TeX Live (full distribution) with latexmk |
-| **Auth** | bcrypt password hashing, JWT session tokens, API key auth (SHA-256) |
+| **Auth** | bcrypt password hashing, JWT-signed DB-backed sessions, API key auth (SHA-256) |
 
 ---
 
@@ -245,6 +266,16 @@ STORAGE_PATH=./data
 TEMPLATES_PATH=../../templates
 COMPILER_IMAGE=backslash-compiler
 SESSION_SECRET=dev-secret-change-in-production
+RUN_COMPILE_RUNNER_IN_WEB=false
+```
+
+If you run the standalone WebSocket server in dev, use the same session secret:
+
+```env
+# apps/ws/.env
+DATABASE_URL=postgresql://backslash:devpassword@localhost:5432/backslash
+REDIS_URL=redis://localhost:6379
+SESSION_SECRET=dev-secret-change-in-production
 ```
 
 **4. Push the database schema:**
@@ -259,11 +290,15 @@ cd apps/web && pnpm db:push
 docker compose build compiler-image
 ```
 
-**6. Start the dev server:**
+**6. Start app services (separate terminals):**
 
 ```bash
 cd apps/web && pnpm dev
+cd apps/ws && pnpm dev
+cd apps/worker && pnpm dev
 ```
+
+If you prefer compile execution inside the web process during local development, set `RUN_COMPILE_RUNNER_IN_WEB=true` and skip `apps/worker`.
 
 **7.** Open [http://localhost:3000](http://localhost:3000)
 
@@ -273,14 +308,20 @@ cd apps/web && pnpm dev
 
 ### LaTeX Engines
 
-Backslash supports the following LaTeX engines and auto-detects the appropriate one based on your document's packages:
+Backslash supports the following LaTeX engines. Project default is `auto`, and one-shot or project-compilation API requests can override engine explicitly.
 
-| Engine | Flag | Auto-detected when |
-|---|---|---|
-| `pdflatex` | `-pdf` | Default engine |
-| `xelatex` | `-xelatex` | `fontspec`, `unicode-math`, or `polyglossia` packages detected |
-| `lualatex` | `-lualatex` | `luacode`, `luatextra` packages, or `\directlua` command detected |
-| `latex` | `-pdfdvi` | Manual selection only |
+`auto` detection rules:
+- `luacode`, `directlua`, `luatextra` → `lualatex`
+- `fontspec`, `unicode-math`, `polyglossia` → `xelatex`
+- otherwise → `pdflatex`
+
+| Engine | Flag |
+|---|---|
+| `auto` | Detect at runtime (`lualatex` / `xelatex` / `pdflatex`) |
+| `pdflatex` | `-pdf` |
+| `xelatex` | `-xelatex` |
+| `lualatex` | `-lualatex` |
+| `latex` | `-pdfdvi` |
 
 ### Templates
 
@@ -346,10 +387,9 @@ apps/web/src/
 ├── lib/                      # Server-side libraries
 │   ├── auth/                 # Authentication (config, middleware, sessions, API keys)
 │   ├── compiler/             # Docker compilation engine
-│   │   ├── docker.ts         # Container management & engine detection
+│   │   ├── docker.ts         # Container management & compilation execution
 │   │   ├── logParser.ts      # LaTeX log parsing & error extraction
-│   │   ├── queue.ts          # BullMQ job queue
-│   │   └── worker.ts         # Background compilation worker
+│   │   ├── runner.ts         # Redis-backed compilation runner
 │   ├── db/                   # Database layer
 │   │   ├── index.ts          # Drizzle client
 │   │   ├── schema.ts         # Database schema (users, sessions, projects, files, builds, API keys)
@@ -375,11 +415,10 @@ apps/web/src/
   - PID limit of 256
   - Configurable memory and CPU limits
   - Automatic container removal after build completion
-- **Authentication** — bcrypt password hashing with JWT session tokens (7-day expiry)
+- **Authentication** — bcrypt password hashing with JWT-signed session cookies backed by DB session records (default 7-day expiry)
 - **API key auth** — Keys are SHA-256 hashed before storage. Only the prefix (`bs_...`) is stored in plaintext for identification.
 - **Input validation** — Zod schemas for all API inputs
 - **Path traversal protection** — File paths are validated and sanitized
-- **Rate limiting** — Configurable build rate limits per user
 
 ---
 
@@ -388,7 +427,7 @@ apps/web/src/
 Backslash uses PostgreSQL with Drizzle ORM. The schema includes:
 
 - **users** — User accounts (email, name, password hash)
-- **sessions** — Auth sessions with JWT tokens
+- **sessions** — Server-side session records keyed by session ID (referenced from signed JWT cookies)
 - **projects** — LaTeX projects (name, description, engine, main file)
 - **project_files** — File metadata (path, MIME type, size, directory flag)
 - **builds** — Compilation history (status, engine, logs, duration, exit code)
@@ -433,7 +472,7 @@ Backslash is built on the shoulders of incredible open-source projects. We're gr
 | [Drizzle ORM](https://orm.drizzle.team/) | TypeScript ORM with zero overhead | Apache-2.0 |
 | [postgres.js](https://github.com/porsager/postgres) | Fastest PostgreSQL client for Node.js | Unlicense |
 | [Redis](https://redis.io/) | In-memory data store for caching and queuing | BSD-3-Clause |
-| [BullMQ](https://docs.bullmq.io/) | Job queue for Node.js built on Redis | MIT |
+| [BullMQ](https://bullmq.io/) | Redis-backed job queue for compilation workloads | MIT |
 | [ioredis](https://github.com/redis/ioredis) | Redis client for Node.js | MIT |
 | [Socket.IO](https://socket.io/) | Real-time WebSocket communication (standalone server) | MIT |
 
@@ -451,7 +490,7 @@ Backslash is built on the shoulders of incredible open-source projects. We're gr
 | Project | Description | License |
 |---|---|---|
 | [bcrypt.js](https://github.com/dcodeIO/bcrypt.js) | Password hashing | MIT |
-| [jose](https://github.com/panva/jose) | JWT / JWS / JWE implementation | MIT |
+| [jose](https://github.com/panva/jose) | JWT signing and verification | MIT |
 | [Zod](https://zod.dev/) | TypeScript-first schema validation | MIT |
 
 ### Tooling

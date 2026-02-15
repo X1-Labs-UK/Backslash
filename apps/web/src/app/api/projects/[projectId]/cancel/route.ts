@@ -4,7 +4,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { builds, projects } from "@/lib/db/schema";
 import { resolveProjectAccess } from "@/lib/auth/project-access";
-import { cancelCompileJob } from "@/lib/compiler/runner";
+import { requestCompileCancel } from "@/lib/compiler/compileQueue";
 import { broadcastBuildUpdate } from "@/lib/websocket/server";
 
 // ─── POST /api/projects/[projectId]/cancel ─────────
@@ -51,8 +51,9 @@ export async function POST(
       );
     }
 
-    const actorUserId = access.user?.id ?? access.project.userId;
-    const { wasQueued, wasRunning } = await cancelCompileJob(build.id);
+    const actorUserId = access.user?.id ?? null;
+    const notifyUserId = access.user?.id ?? access.project.userId;
+    const { wasQueued, wasRunning } = await requestCompileCancel(build.id);
 
     if (wasQueued && !wasRunning) {
       const durationMs = build.createdAt
@@ -75,7 +76,7 @@ export async function POST(
         .set({ updatedAt: new Date() })
         .where(eq(projects.id, projectId));
 
-      broadcastBuildUpdate(actorUserId, {
+      broadcastBuildUpdate(notifyUserId, {
         projectId,
         buildId: build.id,
         status: "canceled",

@@ -213,6 +213,33 @@ async function repairPartialSchema(client) {
   console.log("[migrate] Partial schema repair complete");
 }
 
+/** Ensure build_status enum includes the "canceled" value. */
+async function ensureBuildStatusEnum(client) {
+  await client.unsafe(`
+    DO $$ BEGIN
+      ALTER TYPE "build_status" ADD VALUE IF NOT EXISTS 'canceled';
+    EXCEPTION
+      WHEN undefined_object THEN NULL;
+    END $$;
+  `);
+}
+
+/** Ensure engine enum includes the "auto" value. */
+async function ensureEngineEnum(client) {
+  await client.unsafe(`
+    DO $$ BEGIN
+      ALTER TYPE "engine" ADD VALUE IF NOT EXISTS 'auto';
+    EXCEPTION
+      WHEN undefined_object THEN NULL;
+    END $$;
+  `);
+
+  await client.unsafe(`
+    ALTER TABLE "projects"
+    ALTER COLUMN "engine" SET DEFAULT 'auto';
+  `);
+}
+
 /**
  * Insert a record into __drizzle_migrations for the new 0000 migration
  * so Drizzle skips it on existing DBs.
@@ -326,6 +353,8 @@ async function main() {
       }
     }
 
+    await ensureBuildStatusEnum(client);
+    await ensureEngineEnum(client);
     await verifySchema(client);
     console.log("[migrate] All migrations applied successfully");
   } catch (error) {
