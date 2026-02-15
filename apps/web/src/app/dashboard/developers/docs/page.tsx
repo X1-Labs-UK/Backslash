@@ -505,7 +505,12 @@ curl "${BASE}/compile/JOB_ID/output?format=pdf" \\
           name: {
             type: "string",
             required: false,
-            description: "New project name.",
+            description: "New project name (1-255 characters).",
+          },
+          description: {
+            type: "string",
+            required: false,
+            description: "New project description (max 1000 characters).",
           },
           engine: {
             type: "string",
@@ -516,7 +521,7 @@ curl "${BASE}/compile/JOB_ID/output?format=pdf" \\
           mainFile: {
             type: "string",
             required: false,
-            description: "Path to the main .tex file.",
+            description: "Path to the main .tex file (max 500 characters).",
           },
         },
         curl: `curl -X PUT ${BASE}/projects/PROJECT_ID \\
@@ -574,7 +579,12 @@ curl "${BASE}/compile/JOB_ID/output?format=pdf" \\
           content: {
             type: "string",
             required: false,
-            description: "File content. Default: empty string.",
+            description: "File content. Default: empty string. Ignored if isDirectory is true.",
+          },
+          isDirectory: {
+            type: "boolean",
+            required: false,
+            description: "Set to true to create a directory instead of a file.",
           },
         },
         curl: `curl -X POST ${BASE}/projects/PROJECT_ID/files \\
@@ -885,6 +895,12 @@ export default function ApiDocsPage() {
                   <td className="px-3 py-2 text-xs">Resource created</td>
                 </tr>
                 <tr className="border-t border-border">
+                  <td className="px-3 py-2 font-mono text-xs">202</td>
+                  <td className="px-3 py-2 text-xs">
+                    Accepted — async job queued (compilation)
+                  </td>
+                </tr>
+                <tr className="border-t border-border">
                   <td className="px-3 py-2 font-mono text-xs">400</td>
                   <td className="px-3 py-2 text-xs">
                     Bad request — invalid input or validation error
@@ -906,6 +922,18 @@ export default function ApiDocsPage() {
                   <td className="px-3 py-2 font-mono text-xs">404</td>
                   <td className="px-3 py-2 text-xs">
                     Not found — resource does not exist or you don&apos;t own it
+                  </td>
+                </tr>
+                <tr className="border-t border-border">
+                  <td className="px-3 py-2 font-mono text-xs">409</td>
+                  <td className="px-3 py-2 text-xs">
+                    Conflict — resource already exists (e.g. duplicate file path)
+                  </td>
+                </tr>
+                <tr className="border-t border-border">
+                  <td className="px-3 py-2 font-mono text-xs">422</td>
+                  <td className="px-3 py-2 text-xs">
+                    Unprocessable — compilation failed or could not produce output
                   </td>
                 </tr>
                 <tr className="border-t border-border">
