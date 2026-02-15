@@ -10,7 +10,7 @@ const LOCK_KEY_2 = 1804289383;
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
-  "postgresql://backslash:backslash@postgres:5432/backslash";
+  "postgresql://backslash:backslash@backslash-postgres:5432/backslash";
 
 interface MigrateState {
   promise: Promise<void> | null;

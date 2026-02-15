@@ -92,7 +92,7 @@ const PORT = parseInt(process.env.WS_PORT || "3001", 10);
 const REDIS_URL = process.env.REDIS_URL || "redis://localhost:6379";
 const DATABASE_URL =
   process.env.DATABASE_URL ||
-  "postgresql://backslash:backslash@postgres:5432/backslash";
+  "postgresql://backslash:backslash@backslash-postgres:5432/backslash";
 const CORS_ORIGIN = process.env.CORS_ORIGIN || "*";
 const SESSION_SECRET = process.env.SESSION_SECRET || "change-me-to-a-random-64-char-string";
 
