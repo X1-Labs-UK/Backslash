@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const LOCK_KEY_1 = 2085062334;
 const LOCK_KEY_2 = 1804289383;
+const IGNORED_NOTICE_CODES = new Set(["42P06", "42P07"]);
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -89,10 +90,9 @@ async function insertMigrationHash(client, hash, createdAt) {
 }
 
 /**
- * Legacy compatibility:
- * If a DB already has app tables but is missing the reset baseline hash,
- * insert the hash for the first migration so Drizzle won't re-run 0000.
- * Real schema upgrades must come from proper migration files after 0000.
+ * If a DB already has app tables but is missing migration hashes,
+ * insert hashes for ALL migrations so Drizzle won't re-run them.
+ * Fresh DBs (no tables) skip this entirely and let migrate() create everything.
  */
 async function baselineInitialMigrationIfNeeded(client, migrationsFolder) {
   const usersTableExists = await tableExists(client, "users");
@@ -105,18 +105,21 @@ async function baselineInitialMigrationIfNeeded(client, migrationsFolder) {
     throw new Error("Migration journal is empty");
   }
 
-  const firstEntry = journal.entries[0];
-  const sqlPath = path.join(migrationsFolder, `${firstEntry.tag}.sql`);
-  if (!fs.existsSync(sqlPath)) {
-    throw new Error(`Missing migration SQL file: ${firstEntry.tag}.sql`);
+  for (const entry of journal.entries) {
+    const sqlPath = path.join(migrationsFolder, `${entry.tag}.sql`);
+    if (!fs.existsSync(sqlPath)) continue;
+
+    const hash = sha256File(sqlPath);
+    const alreadyRecorded = await hasMigrationHash(client, hash);
+    if (!alreadyRecorded) {
+      await insertMigrationHash(client, hash, Number(entry.when ?? Date.now()));
+      console.log(`[migrate] Baseline recorded for ${entry.tag}`);
+    }
   }
+}
 
-  const hash = sha256File(sqlPath);
-  const alreadyRecorded = await hasMigrationHash(client, hash);
-  if (alreadyRecorded) return;
-
-  await insertMigrationHash(client, hash, Number(firstEntry.when ?? Date.now()));
-  console.log(`[migrate] Baseline recorded for ${firstEntry.tag}`);
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function main() {
@@ -128,47 +131,70 @@ async function main() {
   }
 
   console.log(`[migrate] Using migrations from: ${migrationsFolder}`);
-  console.log("[migrate] Connecting to database...");
 
-  const client = postgres(DATABASE_URL, { max: 1 });
-  const db = drizzle(client);
+  const maxAttempts = Number(process.env.MIGRATE_MAX_ATTEMPTS ?? "30");
+  const retryDelaySeconds = Number(
+    process.env.MIGRATE_RETRY_DELAY_SECONDS ?? "2"
+  );
 
-  let lockAcquired = false;
-  let hasError = false;
-
-  try {
-    await client`SELECT pg_advisory_lock(${LOCK_KEY_1}, ${LOCK_KEY_2})`;
-    lockAcquired = true;
-    console.log("[migrate] Migration lock acquired");
-
-    await baselineInitialMigrationIfNeeded(client, migrationsFolder);
-
-    await migrate(db, {
-      migrationsFolder,
-      migrationsSchema: "public",
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const client = postgres(DATABASE_URL, {
+      max: 1,
+      onnotice: (notice) => {
+        if (notice?.code && IGNORED_NOTICE_CODES.has(notice.code)) return;
+        console.warn("[migrate] PostgreSQL notice:", notice);
+      },
     });
+    let lockAcquired = false;
 
-    console.log("[migrate] Pending migrations applied successfully");
-  } catch (error) {
-    hasError = true;
-    console.error("[migrate] Migration failed:", error?.message || error);
-  } finally {
-    if (lockAcquired) {
-      try {
-        await client`SELECT pg_advisory_unlock(${LOCK_KEY_1}, ${LOCK_KEY_2})`;
-        console.log("[migrate] Migration lock released");
-      } catch (unlockError) {
-        console.warn(
-          "[migrate] Failed to release migration lock:",
-          unlockError?.message || unlockError
+    try {
+      console.log(
+        `[migrate] Running database migrations (attempt ${attempt}/${maxAttempts})...`
+      );
+
+      await client`SELECT pg_advisory_lock(${LOCK_KEY_1}, ${LOCK_KEY_2})`;
+      lockAcquired = true;
+      console.log("[migrate] Migration lock acquired");
+
+      await baselineInitialMigrationIfNeeded(client, migrationsFolder);
+
+      const db = drizzle(client);
+      await migrate(db, {
+        migrationsFolder,
+        migrationsSchema: "public",
+      });
+
+      console.log("[migrate] Pending migrations applied successfully");
+      await client.end();
+      process.exit(0);
+    } catch (error) {
+      const msg = error?.message || String(error);
+
+      if (attempt === maxAttempts) {
+        console.error(
+          `[migrate] Migrations failed after ${maxAttempts} attempts: ${msg}`
         );
+        await client.end();
+        process.exit(1);
       }
+
+      console.warn(
+        `[migrate] Attempt ${attempt} failed (${msg}), retrying in ${retryDelaySeconds}s...`
+      );
+    } finally {
+      if (lockAcquired) {
+        try {
+          await client`SELECT pg_advisory_unlock(${LOCK_KEY_1}, ${LOCK_KEY_2})`;
+          console.log("[migrate] Migration lock released");
+        } catch {
+          // lock released on disconnect anyway
+        }
+      }
+      await client.end();
     }
 
-    await client.end();
+    await sleep(retryDelaySeconds * 1000);
   }
-
-  process.exit(hasError ? 1 : 0);
 }
 
 await main();

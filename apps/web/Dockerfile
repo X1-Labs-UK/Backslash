@@ -40,6 +40,8 @@ COPY --from=builder /app/templates ./templates
 COPY --from=builder /app/apps/web/drizzle ./apps/web/drizzle
 COPY --from=builder /app/apps/web/scripts ./apps/web/scripts
 COPY --from=builder /app/apps/web/docker-entrypoint.sh ./apps/web/docker-entrypoint.sh
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/web/node_modules ./apps/web/node_modules
 
 # Create data directory
 RUN sed -i 's/\r$//' /app/apps/web/docker-entrypoint.sh \
