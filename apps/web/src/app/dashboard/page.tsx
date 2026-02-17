@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type FormEvent } from "react";
+import { useState, useEffect, useCallback, type FormEvent, useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/lib/utils/cn";
 import {
@@ -11,6 +11,8 @@ import {
   MoreVertical,
   X,
   Loader2,
+  Filter,
+  Tag
 } from "lucide-react";
 
 // ─── Types ──────────────────────────────────────────
@@ -52,7 +54,6 @@ interface SharedProject {
   ownerEmail: string;
   role: "viewer" | "editor";
   lastBuildStatus: string | null;
-  labels: Label[];
 }
 
 
@@ -338,7 +339,7 @@ function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjec
                     onClick={() => {setLabels(labels.filter((_, idx) => idx !== i))}}
                     className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary"
                   >
-                    x
+                    <X/>
                   </button>
                 </span>
               ))}
@@ -440,6 +441,108 @@ function DeleteDialog({
   );
 }
 
+
+// ─── Filter Labels Dialog ─────────────────────
+
+interface FilterLabelsDialogProps {
+  open: boolean;
+  onClose: () => void;
+  filteredLabels : Label[];
+  labels : Label[];
+  onSubmit : (labels: Label[]) => void;
+}
+
+function FilterLabelsDialog({
+  open,
+  onClose,
+  filteredLabels,
+  labels,
+  onSubmit
+}: FilterLabelsDialogProps) {
+  const [selectedLabels, setSelectedLabels] = useState<Label[]>(filteredLabels);
+
+  useEffect(() => {
+    setSelectedLabels(filteredLabels);
+  }, [filteredLabels, open]);
+
+  if (!open) return null;
+
+  const toggleLabel = (label: Label) => {
+    setSelectedLabels((prev) => {
+      const exists = prev.some((l) => l.id === label.id);
+      if (exists) return prev.filter((l) => l.id !== label.id);
+      return [...prev, label];
+    });
+  };
+
+  const isSelected = (label: Label) =>
+    selectedLabels.some((l) => l.id === label.id);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+
+      <div className="relative z-10 w-full max-w-sm rounded-lg border border-border bg-bg-primary p-6 shadow-xl">
+        <h2 className="text-lg font-semibold text-text-primary">
+          Filter Labels
+        </h2>
+
+        <p className="mt-1 text-sm text-text-muted">
+          Select one or more labels to filter projects.
+        </p>
+
+        <div className="mt-4 max-h-72 overflow-y-auto pr-1">
+          <div className="space-y-3">
+            {labels.map((label) => {
+              const selected = isSelected(label);
+
+              return (
+                <button
+                  key={label.id}
+                  type="button"
+                  onClick={() => toggleLabel(label)}
+                  className={`w-full rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors ${
+                    selected
+                      ? "border-accent bg-accent/20 text-text-primary"
+                      : "border-border bg-bg-primary text-text-secondary hover:bg-bg-secondary"
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <Tag className="h-4 w-4"/>
+                    <span>{label.name}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex-1 rounded-lg border border-border bg-bg-primary px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-bg-secondary"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onSubmit(selectedLabels)}
+            className="flex-1 rounded-lg bg-accent px-4 py-2 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Project Card Menu ──────────────────────────────
 
 interface CardMenuProps {
@@ -494,9 +597,12 @@ export default function DashboardPage() {
   const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewDialog, setShowNewDialog] = useState(false);
+  const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Project | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [labels, setLabels] = useState<Label[]>([]);
+  const [filteredLabels, setFilteredLabels] = useState<Label[]>([]);
+  const [filteredProjects, setFilteredProjects] = useState<Project[]>([]);
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -513,7 +619,7 @@ export default function DashboardPage() {
     }
   }, []);
 
-    const fetchLabels = useCallback(async () => {
+  const fetchLabels = useCallback(async () => {
     try {
       const res = await fetch("/api/labels", { cache: "no-store" });
       if (res.ok) {
@@ -525,9 +631,13 @@ export default function DashboardPage() {
     }
   }, []);
 
-  useEffect(() => {
+  const fetchAll = useCallback(() => {
     fetchProjects();
     fetchLabels();
+  }, [fetchProjects, fetchLabels]);
+
+  useEffect(() => {
+    fetchAll();
   }, [fetchProjects, fetchLabels]);
 
   useEffect(() => {
@@ -535,8 +645,7 @@ export default function DashboardPage() {
       if (typeof document !== "undefined" && document.visibilityState !== "visible") {
         return;
       }
-      fetchProjects();
-      fetchLabels();
+      fetchAll();
     }, 10_000);
 
     return () => clearInterval(interval);
@@ -562,6 +671,22 @@ export default function DashboardPage() {
     }
   }
 
+  useMemo(()=>{
+    if(filteredLabels.length === 0) {
+      setFilteredProjects(projects);
+      return;
+    }
+
+    setFilteredProjects(projects.filter(project => {
+      for(const label of filteredLabels) {
+        if(!project.labels.some(l => l.id === label.id)) {
+          return false;
+        }
+      }
+      return true;
+    }));
+  }, [filteredLabels, projects])
+
   return (
     <>
       {/* Header */}
@@ -572,6 +697,17 @@ export default function DashboardPage() {
             Manage your LaTeX documents
           </p>
         </div>
+        <div className="flex items-center gap-2">
+          <button
+          type="button"
+          onClick={() => setShowFilterDialog(true)}
+          className="flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover"
+        >
+          <Filter className="h-4 w-4" />
+          
+          {filteredLabels.length > 0 && (<span>Filter Labels ({filteredLabels.length})</span>)}
+          {filteredLabels.length === 0 && (<span>Filter Labels</span>)}
+        </button>
         <button
           type="button"
           onClick={() => setShowNewDialog(true)}
@@ -580,6 +716,7 @@ export default function DashboardPage() {
           <Plus className="h-4 w-4" />
           New Project
         </button>
+        </div>
       </div>
 
       {/* Loading state */}
@@ -615,9 +752,9 @@ export default function DashboardPage() {
       )}
 
       {/* Project Grid */}
-      {!loading && projects.length > 0 && (
+      {!loading && filteredProjects.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((project) => (
+          {filteredProjects.map((project) => (
             <Link
               key={project.id}
               href={`/editor/${project.id}`}
@@ -690,6 +827,38 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      {!loading && filteredProjects.length === 0 && 
+        (
+          <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary/50 px-6 py-16">
+          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bg-elevated">
+            <Filter className="h-7 w-7 text-text-muted" />
+          </div>
+          <h3 className="mt-4 text-lg font-medium text-text-primary">
+            Your filter returned no results
+          </h3>
+          <p className="mt-1 text-sm text-text-secondary">
+            Please refine your search, or create a project which matches the selected labels.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowFilterDialog(true)}
+            className="mt-6 flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover"
+          >
+            <Filter className="h-4 w-4" />
+            Filter Labels
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowNewDialog(true)}
+            className="mt-6 flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover"
+          >
+            <Plus className="h-4 w-4" />
+            New Project
+          </button>
+          </div>
+        )
+      }
 
       {/* Shared with me section */}
       {!loading && sharedProjects.length > 0 && (
@@ -766,7 +935,7 @@ export default function DashboardPage() {
       <NewProjectDialog
         open={showNewDialog}
         onClose={() => setShowNewDialog(false)}
-        onCreated={fetchProjects}
+        onCreated={fetchAll}
         defaultLabels={labels}
       />
 
@@ -777,6 +946,18 @@ export default function DashboardPage() {
         onConfirm={handleDelete}
         deleting={deleting}
       />
+
+      <FilterLabelsDialog
+        open={showFilterDialog}
+        onClose={() => setShowFilterDialog(false)}
+        onSubmit={filtered => {
+          setFilteredLabels(filtered);
+          setShowFilterDialog(false);
+        }}
+        filteredLabels={filteredLabels}
+        labels={labels}
+      >
+      </FilterLabelsDialog>
     </>
   );
 }
