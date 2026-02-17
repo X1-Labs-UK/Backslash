@@ -369,6 +369,7 @@ function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjec
                 </span>
               ))}
             </div>
+          </div>
 
           {/* Actions */}
           <div className="flex items-center justify-end gap-3 pt-2">
@@ -851,7 +852,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {!loading && filteredProjects.length === 0 && 
+      {!loading && filteredProjects.length === 0 && projects.length > 0 && 
         (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-border bg-bg-secondary/50 px-6 py-16">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-bg-elevated">
