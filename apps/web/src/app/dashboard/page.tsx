@@ -132,7 +132,7 @@ function SkeletonCard() {
 
 interface NewProjectDialogProps {
   open: boolean;
-  defaultLabels : PrimitiveLabel[];
+  defaultLabels : Label[];
   onClose: () => void;
   onCreated: () => void;
 }
@@ -144,12 +144,14 @@ function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjec
   const [labels, setLabels] = useState<PrimitiveLabel[]>([]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+  const [currentLabel, setCurrentLabel] = useState("");
 
   function resetForm() {
     setName("");
     setDescription("");
     setTemplate("blank");
     setLabels([]);
+    setCurrentLabel("");
     setError("");
   }
 
@@ -172,11 +174,11 @@ function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjec
       }
 
       // Attach all the labels specified
-      const { projectId } = await res.json();
+      const { project } = await res.json();
       await Promise.all(labels.map(label =>
           fetch(`/api/labels/attach`, {
-            method: "POST",
-            body: JSON.stringify({labelName: label.name, projectId}),
+            method: "PUT",
+            body: JSON.stringify({labelName: label.name, projectId: project.id}),
             headers: { "Content-Type": "application/json" },
           })));
 
@@ -286,38 +288,62 @@ function NewProjectDialog({ open, defaultLabels, onClose, onCreated }: NewProjec
 
           {/* Labels */}
           <div>
-            <label
-              htmlFor="labels"
-              className="mb-1.5 block text-sm font-medium text-text-secondary"
-            >
-              Labels
-            </label>
-            <input
-              id="labels"
-              type="text"
-              value={name}
-              onChange={(e) => setLabels(
-                  [...labels, {
-                    name: e.target.value
-                  }]
-              )}
-              required
-              placeholder="Research"
-              className="w-full rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent"
-            />
-            <datalist id="labels">
-              {defaultLabels.map((label) => (
-                  <option value={label.name}/>
+              <label
+                htmlFor="labels"
+                className="mb-1.5 block text-sm font-medium text-text-secondary"
+              >
+                Labels
+              </label>
+
+              <div className="flex items-center gap-2">
+              <input
+                id="labels"
+                list="labels-data"
+                type="text"
+                value={currentLabel}
+                onChange={(e) => setCurrentLabel(e.target.value)}
+                placeholder="Labels to identify and organize your projects"
+                className="flex-1 rounded-lg border border-border bg-bg-secondary px-3 py-2 text-sm text-text-primary placeholder:text-text-muted outline-none transition-colors focus:border-accent focus:ring-1 focus:ring-accent"
+              />
+
+              <datalist id="labels-data">
+              {defaultLabels.filter(x => !labels.some(y => x.name === y.name)).map((label) => (
+                <option key={`DATALIST__${label.id}`} value={label.name} />
               ))}
-            </datalist>
+              </datalist>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setLabels([...labels, { name: currentLabel }]);
+                  setCurrentLabel("");
+                }}
+                className="rounded-lg bg-accent px-3 py-2 text-sm font-medium text-bg-primary transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={!currentLabel.trim() || labels.some((l) => l.name === currentLabel.trim())}
+              >
+                Add
+              </button>
+            </div>
+
             <div className="mt-4 flex flex-wrap items-center gap-3">
-                {/* Engine badge */}
-              {labels.map((label) => (
-                  <span className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+              {labels.map((label, i) => (
+                <span
+                  key={i}
+                  className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary"
+                >
                   {label.name}
+
+                  <button
+                    type="button"
+                    onClick={() => {setLabels(labels.filter((_, idx) => idx !== i))}}
+                    className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-text-muted transition-colors hover:bg-bg-secondary hover:text-text-primary"
+                  >
+                    x
+                  </button>
                 </span>
               ))}
             </div>
+
           </div>
 
           {/* Actions */}
@@ -621,7 +647,7 @@ export default function DashboardPage() {
 
                 {/* Label Badges */}
                 {project.labels.map((label) => (
-                  <span className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                  <span key={label.id} className="inline-flex items-center rounded-full bg-bg-elevated px-2.5 py-0.5 text-xs font-medium text-text-secondary">
                   {label.name}
                 </span>
                 ))}

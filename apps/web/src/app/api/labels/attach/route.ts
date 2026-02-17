@@ -3,7 +3,6 @@ import {labels, projectLabels, projects} from "@/lib/db/schema";
 import {withAuth} from "@/lib/auth/middleware";
 import {eq, and} from "drizzle-orm";
 import {NextRequest, NextResponse} from "next/server";
-import {v4 as uuidv4} from "uuid";
 
 // ─── PUT /api/labels/attach ────────────────────────────
 // Attach a label to a project by name. Creates the label if it doesn't exist.
@@ -52,7 +51,6 @@ export async function PUT(request: NextRequest) {
                 [label] = await db
                     .insert(labels)
                     .values({
-                        id: uuidv4(),
                         name: labelName,
                         userId: user.id,
                     })
@@ -82,7 +80,6 @@ export async function PUT(request: NextRequest) {
             const [projectLabel] = await db
                 .insert(projectLabels)
                 .values({
-                    id: uuidv4(),
                     labelId: label.id,
                     projectId,
                 })

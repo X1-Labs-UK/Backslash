@@ -3,6 +3,7 @@ import {labels, projectLabels, projects} from "@/lib/db/schema";
 import {withAuth} from "@/lib/auth/middleware";
 import {eq, and} from "drizzle-orm";
 import {NextRequest, NextResponse} from "next/server";
+import { Label } from "@radix-ui/react-dropdown-menu";
 
 // ─── PUT /api/labels/detach ────────────────────────────
 // Detach an existing label to a project.
@@ -42,8 +43,26 @@ export async function PUT(request: NextRequest) {
                 .delete(projectLabels)
                 .where(eq(projectLabels.id, existing.id))
                 .returning();
+            
+            // If that was the last project using this label, delete the label as well
+            const [remaining] = await db
+                .select()
+                .from(projectLabels)
+                .where(eq(projectLabels.labelId, labelId))
+                .limit(1);
+            
+            if(!remaining) {
+                await db
+                    .delete(labels)
+                    .where(
+                        and(
+                            eq(labels.id, labelId),
+                            eq(labels.userId, user.id)
+                        )
+                    );
+                }
 
-            return NextResponse.json({projectLabel}, {status: 200});
+            return NextResponse.json({...projectLabel, deletedLabel: !remaining}, {status: 200});
         } catch (error) {
             console.error("Error detaching label:", error);
             return NextResponse.json(

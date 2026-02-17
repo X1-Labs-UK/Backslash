@@ -138,7 +138,7 @@ export const projectLabels = pgTable(
 
     projectId: uuid("project_id")
       .notNull()
-      .references(() => projectFiles.id, { onDelete: "cascade" }),
+      .references(() => projects.id, { onDelete: "cascade" }),
 
     labelId: uuid("label_id")
       .notNull()
@@ -322,9 +322,9 @@ export const labelsRelations = relations(labels, ({ one, many }) => ({
 }));
 
 export const projectLabelsRelations = relations(projectLabels, ({ one }) => ({
-  file: one(projectFiles, {
+  project: one(projects, {
     fields: [projectLabels.projectId],
-    references: [projectFiles.id],
+    references: [projects.id],
   }),
   label: one(labels, {
     fields: [projectLabels.labelId],
