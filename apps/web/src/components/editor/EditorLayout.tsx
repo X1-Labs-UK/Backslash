@@ -97,6 +97,10 @@ interface PublicShareInfo {
   url?: string | null;
 }
 
+interface SelectFileOptions {
+  preserveFollow?: boolean;
+}
+
 interface EditorLayoutProps {
   project: Project;
   files: ProjectFile[];
@@ -706,7 +710,7 @@ export function EditorLayout({
       if (followingUserIdRef.current === data.userId && data.activeFileId) {
         const file = files.find((f) => f.id === data.activeFileId);
         if (file && data.activeFileId !== activeFileIdRef.current) {
-          handleFileSelect(file.id, file.path);
+          handleFileSelect(file.id, file.path, { preserveFollow: true });
         }
       }
     },
@@ -806,10 +810,21 @@ export function EditorLayout({
   // ─── File operations ──────────────────────────────
 
   const handleFileSelect = useCallback(
-    (fileId: string, filePath: string) => {
+    (
+      fileId: string,
+      filePath: string | null,
+      options: SelectFileOptions = {}
+    ) => {
+      if (!options.preserveFollow && followingUserIdRef.current) {
+        setFollowingUserId(null);
+      }
+
       if (activeFileId && activeFileContent !== undefined) {
         fileContentsRef.current.set(activeFileId, activeFileContent);
       }
+
+      const resolvedFilePath =
+        filePath ?? files.find((f) => f.id === fileId)?.path ?? null;
 
       setRemoteCursors(new Map());
       setActiveFileId(fileId);
@@ -817,13 +832,13 @@ export function EditorLayout({
       setActiveFileContent(cached ?? "");
 
       const alreadyOpen = openFiles.some((f) => f.id === fileId);
-      if (!alreadyOpen) {
-        setOpenFiles((prev) => [...prev, { id: fileId, path: filePath }]);
+      if (!alreadyOpen && resolvedFilePath) {
+        setOpenFiles((prev) => [...prev, { id: fileId, path: resolvedFilePath }]);
       }
 
-      sendActiveFile(fileId, filePath);
+      sendActiveFile(fileId, resolvedFilePath);
     },
-    [openFiles, sendActiveFile, activeFileId, activeFileContent]
+    [activeFileContent, activeFileId, files, openFiles, sendActiveFile]
   );
 
   const handleCloseTab = useCallback(
@@ -1135,6 +1150,12 @@ export function EditorLayout({
     [files, handleFileSelect]
   );
 
+  const handleEditorPointerDown = useCallback(() => {
+    if (followingUserIdRef.current) {
+      setFollowingUserId(null);
+    }
+  }, []);
+
   // ─── Follow Mode ─────────────────────────────────
 
   const handleFollowUser = useCallback(
@@ -1150,7 +1171,7 @@ export function EditorLayout({
       if (user?.activeFileId && user.activeFileId !== activeFileId) {
         const file = files.find((f) => f.id === user.activeFileId);
         if (file) {
-          handleFileSelect(file.id, file.path);
+          handleFileSelect(file.id, file.path, { preserveFollow: true });
         }
       }
 
@@ -1260,11 +1281,11 @@ export function EditorLayout({
                     activeFileId={activeFileId}
                     dirtyFileIds={dirtyFileIds}
                     onSelectTab={(fileId) => {
-                      if (activeFileId && activeFileContent !== undefined) {
-                        fileContentsRef.current.set(activeFileId, activeFileContent);
-                      }
-                      setRemoteCursors(new Map());
-                      setActiveFileId(fileId);
+                      const filePath =
+                        openFiles.find((f) => f.id === fileId)?.path ??
+                        files.find((f) => f.id === fileId)?.path ??
+                        null;
+                      handleFileSelect(fileId, filePath);
                     }}
                     onCloseTab={handleCloseTab}
                   />
@@ -1297,6 +1318,8 @@ export function EditorLayout({
                           }}
                           remoteChanges={remoteChanges}
                           remoteCursors={remoteCursors}
+                          hideLocalCursor={Boolean(followingUserId)}
+                          onEditorPointerDown={handleEditorPointerDown}
                         />
                       )
                     ) : (

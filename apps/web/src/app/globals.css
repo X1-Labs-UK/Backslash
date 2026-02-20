@@ -269,13 +269,30 @@ body {
 
 /* Cursor styling */
 .cm-cursor {
-  border-left-color: var(--color-accent) !important;
+  border-left-color: var(--color-text-primary) !important;
   border-left-width: 2px !important;
 }
 
 /* Native caret color for when drawSelection is not used */
 .cm-content {
   caret-color: var(--color-text-primary);
+}
+
+[data-theme="dark"] .cm-cursor {
+  border-left-color: #ffffff !important;
+}
+
+[data-theme="dark"] .cm-content {
+  caret-color: #ffffff;
+}
+
+/* Hide local caret while following another collaborator */
+.cm-editor[data-hide-local-cursor="true"] .cm-cursor {
+  opacity: 0 !important;
+}
+
+.cm-editor[data-hide-local-cursor="true"] .cm-content {
+  caret-color: transparent !important;
 }
 
 /* Syntax highlighting - ensure good contrast */
