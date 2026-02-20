@@ -29,6 +29,8 @@ interface CodeEditorProps {
   language?: string;
   readOnly?: boolean;
   errors?: BuildError[];
+  hideLocalCursor?: boolean;
+  onEditorPointerDown?: () => void;
   // Collaboration
   onDocChange?: (changes: DocChange[]) => void;
   onCursorChange?: (selection: CursorSelection) => void;
@@ -54,6 +56,8 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
         onChange,
         readOnly = false,
         errors,
+      hideLocalCursor = false,
+      onEditorPointerDown,
       onDocChange,
       onCursorChange,
       remoteChanges,
@@ -69,6 +73,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     const onChangeRef = useRef(onChange);
     const onDocChangeRef = useRef(onDocChange);
     const onCursorChangeRef = useRef(onCursorChange);
+    const onEditorPointerDownRef = useRef(onEditorPointerDown);
     const isExternalUpdate = useRef(false);
     const cursorEmitRafRef = useRef<number | null>(null);
     const lastCursorEmitKeyRef = useRef<string>("");
@@ -84,6 +89,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
     useEffect(() => {
       onCursorChangeRef.current = onCursorChange;
     }, [onCursorChange]);
+
+    useEffect(() => {
+      onEditorPointerDownRef.current = onEditorPointerDown;
+    }, [onEditorPointerDown]);
 
     // Expose highlightText and scrollToLine to parent
     useImperativeHandle(
@@ -261,6 +270,7 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       if (!containerRef.current) return;
 
       let view: import("@codemirror/view").EditorView | null = null;
+      let detachPointerDown: (() => void) | null = null;
 
       async function initEditor() {
         const { EditorState, StateEffect, StateField } = await import("@codemirror/state");
@@ -272,7 +282,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           highlightSpecialChars,
           Decoration,
           ViewPlugin,
-          WidgetType,
           MatchDecorator,
         } = await import("@codemirror/view");
         const {
@@ -297,44 +306,6 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
 
         // ─── Remote cursor infrastructure ───────────────
         type CursorMap = Map<string, RemoteCursorData>;
-
-        class CursorLabelWidget extends WidgetType {
-          constructor(readonly name: string, readonly color: string) {
-            super();
-          }
-          toDOM() {
-            const el = document.createElement("span");
-            el.className = "cm-remote-cursor-label";
-            el.textContent = this.name;
-            el.style.cssText = `
-              background: ${this.color};
-              color: #fff;
-              font-size: 10px;
-              font-weight: 600;
-              line-height: 1;
-              padding: 1px 4px;
-              border-radius: 3px 3px 3px 0;
-              position: absolute;
-              top: -18px;
-              left: -1px;
-              white-space: nowrap;
-              pointer-events: none;
-              z-index: 10;
-              font-family: var(--font-sans, sans-serif);
-              box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-            `;
-            const wrapper = document.createElement("span");
-            wrapper.style.cssText = "position: relative; display: inline; width: 0; overflow: visible;";
-            wrapper.appendChild(el);
-            return wrapper;
-          }
-          eq(other: CursorLabelWidget) {
-            return this.name === other.name && this.color === other.color;
-          }
-          ignoreEvent() {
-            return true;
-          }
-        }
 
         const setCursorsEffect = StateEffect.define<CursorMap>();
         remoteCursorEffectRef.current = setCursorsEffect;
@@ -435,18 +406,9 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
                         attributes: {
                           class: "cm-remote-caret",
                           "data-remote-user": name,
+                          title: name,
                           style: caretStyle,
                         },
-                      }),
-                    });
-
-                    // Name label widget above the caret
-                    decos.push({
-                      from: caretTo,
-                      to: caretTo,
-                      deco: Decoration.widget({
-                        widget: new CursorLabelWidget(name, color),
-                        side: 1,
                       }),
                     });
                   }
@@ -641,6 +603,16 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
           parent: containerRef.current!,
         });
 
+        const editorDom = view.dom;
+        editorDom.dataset.hideLocalCursor = hideLocalCursor ? "true" : "false";
+        const handlePointerDown = () => {
+          onEditorPointerDownRef.current?.();
+        };
+        editorDom.addEventListener("pointerdown", handlePointerDown);
+        detachPointerDown = () => {
+          editorDom.removeEventListener("pointerdown", handlePointerDown);
+        };
+
         viewRef.current = view;
 
         // If content changed during async init, sync the editor to the latest value
@@ -673,6 +645,10 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       initEditor();
 
       return () => {
+        if (detachPointerDown) {
+          detachPointerDown();
+          detachPointerDown = null;
+        }
         if (cursorEmitRafRef.current !== null) {
           cancelAnimationFrame(cursorEmitRafRef.current);
           cursorEmitRafRef.current = null;
@@ -684,6 +660,12 @@ export const CodeEditor = forwardRef<CodeEditorHandle, CodeEditorProps>(
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+      const view = viewRef.current;
+      if (!view) return;
+      view.dom.dataset.hideLocalCursor = hideLocalCursor ? "true" : "false";
+    }, [hideLocalCursor]);
 
     // Update content from outside without losing cursor position
     useEffect(() => {

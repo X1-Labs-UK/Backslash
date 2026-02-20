@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils/cn";
 import type { PresenceUser } from "@backslash/shared";
 import {
@@ -55,7 +56,10 @@ export function PresenceAvatars({
                     backgroundColor: user.color,
                     color: "#1e1e2e",
                     ...(isFollowing
-                      ? { borderColor: user.color, ringColor: user.color }
+                      ? ({
+                          borderColor: user.color,
+                          ["--tw-ring-color"]: user.color,
+                        } as CSSProperties)
                       : {}),
                   }}
                   onClick={() => onFollowUser?.(user.userId)}
